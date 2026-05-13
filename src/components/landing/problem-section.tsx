@@ -1,67 +1,60 @@
+const cards = [
+  {
+    title: "Platform ROAS is not enough",
+    body: "Meta reports a number that looks profitable while real revenue tells a different story.",
+    color: "bg-indigo-500",
+  },
+  {
+    title: "Data lives in silos",
+    body: "Ads, sales, attribution and goals never sit in the same place at the same time.",
+    color: "bg-cyan-500",
+  },
+  {
+    title: "Numbers stop at metrics",
+    body: "Dashboards show CTR, CPC, ROAS — but never explain what to do next.",
+    color: "bg-amber-500",
+  },
+  {
+    title: "Budget leaks before anyone sees it",
+    body: "Spend keeps going while a campaign is already broken — and nothing surfaces it.",
+    color: "bg-rose-500",
+  },
+];
+
 export default function ProblemSection() {
   return (
-    <section className="bg-black text-white py-32 border-t border-zinc-900">
+    <section className="bg-[#090A0F] text-white py-24 lg:py-32 border-b border-zinc-900">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
 
-      <div className="max-w-7xl mx-auto px-8">
-
-        <div className="max-w-4xl mb-20">
-
-          <p className="text-zinc-500 uppercase tracking-[0.2em] text-sm mb-6">
-            The Problem
+        <div className="max-w-3xl mb-16">
+          <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
+            The problem
           </p>
-
-          <h2 className="text-5xl font-bold leading-tight mb-8">
-            Meta Ads shows advertising numbers.
-            <br />
-            But not real business reality.
+          <h2 className="text-4xl lg:text-5xl font-bold leading-[1.1] tracking-tight">
+            Most ad accounts do not have a traffic problem. They have an operations problem.
           </h2>
-
-          <p className="text-zinc-400 text-xl leading-relaxed">
-            Most advertisers optimize campaigns based on platform metrics,
-            while real revenue, attribution and profitability remain unclear.
-          </p>
-
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-          <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-950">
-            <h3 className="text-xl font-semibold mb-4">
-              Fake ROAS
-            </h3>
-
-            <p className="text-zinc-500 leading-relaxed">
-              Meta can report profitable campaigns while real revenue
-              tells a completely different story.
-            </p>
-          </div>
-
-          <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-950">
-            <h3 className="text-xl font-semibold mb-4">
-              Broken Attribution
-            </h3>
-
-            <p className="text-zinc-500 leading-relaxed">
-              Sales data, UTM tracking and campaign attribution
-              are usually disconnected and chaotic.
-            </p>
-          </div>
-
-          <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-950">
-            <h3 className="text-xl font-semibold mb-4">
-              No Decision System
-            </h3>
-
-            <p className="text-zinc-500 leading-relaxed">
-              Most dashboards show charts,
-              but do not explain what should happen next.
-            </p>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {cards.map((c) => (
+            <div
+              key={c.title}
+              className="border border-zinc-800 rounded-2xl bg-zinc-950 overflow-hidden"
+            >
+              <div className={`h-1 ${c.color}`} />
+              <div className="p-6">
+                <h3 className="text-base font-semibold mb-3 text-white">
+                  {c.title}
+                </h3>
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  {c.body}
+                </p>
+              </div>
+            </div>
+          ))}
         </div>
 
       </div>
-
     </section>
   );
 }

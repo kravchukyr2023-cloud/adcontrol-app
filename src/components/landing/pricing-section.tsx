@@ -1,147 +1,144 @@
+import Link from "next/link";
+
+type Plan = {
+  name: string;
+  price: string;
+  period?: string;
+  features: string[];
+  cta: string;
+  highlight: boolean;
+};
+
+const plans: Plan[] = [
+  {
+    name: "Starter",
+    price: "Free",
+    features: [
+      "1 Project",
+      "1 Business Manager",
+      "1 Ad Account",
+      "Dashboard Overview",
+      "Manual Data Sync",
+    ],
+    cta: "Start free",
+    highlight: false,
+  },
+  {
+    name: "Operator",
+    price: "$8.99",
+    period: "/ month",
+    features: [
+      "3 Projects",
+      "Google Sheets",
+      "Sales & Attribution",
+      "UTM Generator",
+      "Full Decision Engine",
+      "Auto Sync",
+    ],
+    cta: "Choose Operator",
+    highlight: true,
+  },
+  {
+    name: "Team",
+    price: "$18.99",
+    period: "/ month",
+    features: [
+      "5 Projects",
+      "Shopify Integration",
+      "Priority Sync",
+      "Revenue Operations",
+      "Advanced Diagnostics",
+    ],
+    cta: "Choose Team",
+    highlight: false,
+  },
+  {
+    name: "Scale",
+    price: "$49.99",
+    period: "/ month",
+    features: [
+      "15 Projects",
+      "225 Ad Accounts",
+      "Priority Support",
+      "Multi-project Operations",
+      "All Features Included",
+    ],
+    cta: "Choose Scale",
+    highlight: false,
+  },
+];
+
 export default function PricingSection() {
   return (
-    <section className="bg-black text-white py-32 border-t border-zinc-900">
+    <section
+      id="pricing"
+      className="scroll-mt-20 bg-[#090A0F] text-white py-24 lg:py-32 border-b border-zinc-900"
+    >
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
 
-      <div className="max-w-7xl mx-auto px-8">
-
-        <div className="max-w-4xl mb-20">
-
-          <p className="text-zinc-500 uppercase tracking-[0.2em] text-sm mb-6">
+        <div className="max-w-3xl mb-16">
+          <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
             Pricing
           </p>
-
-          <h2 className="text-5xl font-bold leading-tight mb-8">
-            Choose the operating level
-            <br />
-            for your advertising workflow.
+          <h2 className="text-4xl lg:text-5xl font-bold leading-[1.1] tracking-tight">
+            Operational pricing. Clear scale, clear value.
           </h2>
-
-          <p className="text-zinc-400 text-xl leading-relaxed">
-            Start free. Upgrade when your projects,
-            team and data operations grow.
-          </p>
-
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {plans.map((p) => (
+            <div
+              key={p.name}
+              className={
+                p.highlight
+                  ? "relative border border-indigo-500/60 rounded-2xl p-7 bg-gradient-to-b from-indigo-500/10 to-zinc-950 flex flex-col"
+                  : "relative border border-zinc-800 rounded-2xl p-7 bg-zinc-950 flex flex-col"
+              }
+            >
+              {p.highlight && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[11px] bg-indigo-500 text-white px-3 py-1 rounded-full font-medium">
+                  Recommended
+                </span>
+              )}
 
-          {/* Starter */}
-          <div className="border border-zinc-800 rounded-3xl p-8 bg-zinc-950 flex flex-col">
+              <div className="mb-7">
+                <h3 className="text-xl font-semibold mb-3">{p.name}</h3>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-bold">{p.price}</span>
+                  {p.period && (
+                    <span className="text-sm text-zinc-500">{p.period}</span>
+                  )}
+                </div>
+              </div>
 
-            <div className="mb-8">
-              <h3 className="text-2xl font-bold mb-2">
-                Starter
-              </h3>
+              <ul className="space-y-3 text-sm text-zinc-400 flex-1 mb-8">
+                {p.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <span className="text-indigo-400 mt-0.5">·</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
 
-              <p className="text-zinc-500">
-                Free
-              </p>
+              <Link
+                href="/auth"
+                className={
+                  p.highlight
+                    ? "bg-white text-black text-center py-3 rounded-xl font-medium hover:bg-zinc-200 transition"
+                    : "border border-zinc-700 text-center py-3 rounded-xl hover:border-zinc-500 transition"
+                }
+              >
+                {p.cta}
+              </Link>
             </div>
-
-            <ul className="space-y-4 text-sm text-zinc-400 flex-1">
-              <li>1 Project</li>
-              <li>1 Business Manager</li>
-              <li>1 Ad Account</li>
-              <li>Dashboard Overview</li>
-              <li>Manual Data Sync</li>
-            </ul>
-
-            <button className="mt-10 border border-zinc-700 py-3 rounded-xl hover:border-zinc-500 transition">
-              Start Free
-            </button>
-
-          </div>
-
-          {/* Operator */}
-          <div className="border border-white rounded-3xl p-8 bg-white text-black flex flex-col relative">
-
-            <div className="absolute top-4 right-4 text-xs bg-black text-white px-3 py-1 rounded-full">
-              Recommended
-            </div>
-
-            <div className="mb-8">
-              <h3 className="text-2xl font-bold mb-2">
-                Operator
-              </h3>
-
-              <p className="text-zinc-600">
-                $8.99 / month
-              </p>
-            </div>
-
-            <ul className="space-y-4 text-sm text-zinc-700 flex-1">
-              <li>3 Projects</li>
-              <li>Google Sheets</li>
-              <li>Sales & Attribution</li>
-              <li>UTM Generator</li>
-              <li>Full Decision Engine</li>
-              <li>Auto Sync</li>
-            </ul>
-
-            <button className="mt-10 bg-black text-white py-3 rounded-xl hover:bg-zinc-800 transition">
-              Choose Operator
-            </button>
-
-          </div>
-
-          {/* Team */}
-          <div className="border border-zinc-800 rounded-3xl p-8 bg-zinc-950 flex flex-col">
-
-            <div className="mb-8">
-              <h3 className="text-2xl font-bold mb-2">
-                Team
-              </h3>
-
-              <p className="text-zinc-500">
-                $18.99 / month
-              </p>
-            </div>
-
-            <ul className="space-y-4 text-sm text-zinc-400 flex-1">
-              <li>5 Projects</li>
-              <li>Shopify Integration</li>
-              <li>Priority Sync</li>
-              <li>Revenue Operations</li>
-              <li>Advanced Diagnostics</li>
-            </ul>
-
-            <button className="mt-10 border border-zinc-700 py-3 rounded-xl hover:border-zinc-500 transition">
-              Choose Team
-            </button>
-
-          </div>
-
-          {/* Scale */}
-          <div className="border border-zinc-800 rounded-3xl p-8 bg-zinc-950 flex flex-col">
-
-            <div className="mb-8">
-              <h3 className="text-2xl font-bold mb-2">
-                Scale
-              </h3>
-
-              <p className="text-zinc-500">
-                $49.99 / month
-              </p>
-            </div>
-
-            <ul className="space-y-4 text-sm text-zinc-400 flex-1">
-              <li>15 Projects</li>
-              <li>225 Ad Accounts</li>
-              <li>Priority Support</li>
-              <li>Multi-project Operations</li>
-              <li>All Features Included</li>
-            </ul>
-
-            <button className="mt-10 border border-zinc-700 py-3 rounded-xl hover:border-zinc-500 transition">
-              Choose Scale
-            </button>
-
-          </div>
-
+          ))}
         </div>
+
+        <p className="text-center text-xs text-zinc-500 mt-10">
+          Payments are not active in this demo.
+        </p>
 
       </div>
-
     </section>
   );
 }

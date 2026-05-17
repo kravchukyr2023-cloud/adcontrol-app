@@ -243,15 +243,13 @@ export default function BillingTab() {
           />
           <UsageRow
             label="Business Managers"
-            used={0}
+            used={usage.businessManagers}
             limit={limits.businessManagersTotal}
-            note="Meta not connected"
           />
           <UsageRow
             label="Meta Ad Accounts"
-            used={0}
+            used={usage.adAccounts}
             limit={limits.adAccountsTotal}
-            note="Meta not connected"
           />
         </div>
       </div>

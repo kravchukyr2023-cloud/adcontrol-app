@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { emitActiveProjectChange } from "@/hooks/use-active-project";
 
 type Props = {
   onLoggedOut: () => void;
@@ -16,8 +17,9 @@ export default function LogoutTab({ onLoggedOut }: Props) {
     try {
       setLoading(true);
       await supabase.auth.signOut();
+      emitActiveProjectChange(null);
       onLoggedOut();
-      router.push("/landing");
+      router.replace("/auth");
     } finally {
       setLoading(false);
     }
@@ -38,7 +40,7 @@ export default function LogoutTab({ onLoggedOut }: Props) {
         Log out of AdControl?
       </h3>
       <p className="text-sm text-zinc-400 max-w-md mb-8 leading-relaxed">
-        You will be returned to the landing page. Your data stays safe — you can log back in any time.
+        You will be signed out and returned to the login page. Your active project selection is cleared — you can log back in any time.
       </p>
 
       <button

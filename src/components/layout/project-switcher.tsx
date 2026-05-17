@@ -114,15 +114,14 @@ export default function ProjectSwitcher() {
       .select("id, name, currency, description")
       .order("created_at", { ascending: false });
 
-    if (error || !data || data.length === 0) return;
+    if (error || !data) return;
 
-    const list = data as Project[];
-    setProjects(list);
+    setProjects(data as Project[]);
 
-    const newId = list[0].id;
-    setActiveId(newId);
-    localStorage.setItem(ACTIVE_KEY, newId);
-    router.push("/dashboard");
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(ACTIVE_KEY);
+      if (stored) setActiveId(stored);
+    }
   }
 
   const active =

@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+
+const ACTIVE_KEY = "adcontrol_active_project_id";
 
 type Props = {
   open: boolean;
@@ -68,6 +71,7 @@ export default function CreateProjectWizard({
   onClose,
   onCreated,
 }: Props) {
+  const router = useRouter();
   const [step, setStep] = useState(0);
 
   // Step 1
@@ -184,9 +188,14 @@ export default function CreateProjectWizard({
         throw new Error(settingsError.message);
       }
 
+      if (typeof window !== "undefined") {
+        localStorage.setItem(ACTIVE_KEY, project.id);
+      }
+
       reset();
       onClose();
       onCreated();
+      router.push("/dashboard");
     } catch (err: unknown) {
       const message =
         err instanceof Error

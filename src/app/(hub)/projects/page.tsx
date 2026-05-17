@@ -10,11 +10,24 @@ import EmptyProjects from "@/components/hub/empty-projects";
 import CreateProjectCard from "@/components/hub/create-project-card";
 import CreateProjectWizard from "@/components/hub/create-project-wizard";
 
+const ACTIVE_KEY = "adcontrol_active_project_id";
+
 type Project = {
   id: string;
   name: string;
   currency: string;
 };
+
+async function fetchProjects(): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id, name, currency")
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+
+  return data as Project[];
+}
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -23,24 +36,30 @@ export default function ProjectsPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
-    loadProjects();
+    let cancelled = false;
+
+    const run = async () => {
+      const list = await fetchProjects();
+      if (cancelled) return;
+      setProjects(list);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  async function loadProjects() {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("id, name, currency")
-      .order("created_at", { ascending: false });
-
-    if (error || !data) {
-      setProjects([]);
-      return;
-    }
-
-    setProjects(data as Project[]);
+  async function refresh() {
+    const list = await fetchProjects();
+    setProjects(list);
   }
 
-  function handleOpen() {
+  function handleOpen(id: string) {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(ACTIVE_KEY, id);
+    }
     router.push("/dashboard");
   }
 
@@ -91,6 +110,7 @@ export default function ProjectsPage() {
             {projects!.map((p) => (
               <ProjectCard
                 key={p.id}
+                id={p.id}
                 name={p.name}
                 currency={p.currency}
                 onOpen={handleOpen}
@@ -105,7 +125,7 @@ export default function ProjectsPage() {
       <CreateProjectWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
-        onCreated={loadProjects}
+        onCreated={refresh}
       />
     </>
   );

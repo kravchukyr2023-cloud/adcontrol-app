@@ -1,7 +1,8 @@
 type Props = {
+  id: string;
   name: string;
   currency: string;
-  onOpen: () => void;
+  onOpen: (id: string) => void;
 };
 
 const mockMetrics = {
@@ -22,6 +23,7 @@ function buildInitials(name: string): string {
 }
 
 export default function ProjectCard({
+  id,
   name,
   currency,
   onOpen,
@@ -56,7 +58,7 @@ export default function ProjectCard({
       </div>
 
       <button
-        onClick={onOpen}
+        onClick={() => onOpen(id)}
         className="mt-auto text-sm font-medium text-[#a99cff] hover:text-white text-left transition"
       >
         Open Project →

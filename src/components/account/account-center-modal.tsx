@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import AccountTabs, { AccountTab } from "./account-tabs";
+import AccountTabs from "./account-tabs";
+import { AccountTab } from "@/lib/account-center/open";
 import ProfileTab from "./profile-tab";
 import BillingTab from "./billing-tab";
 import SupportTab from "./support-tab";
@@ -12,15 +13,17 @@ type Props = {
   open: boolean;
   onClose: () => void;
   email: string;
+  tab: AccountTab;
+  onChangeTab: (tab: AccountTab) => void;
 };
 
 export default function AccountCenterModal({
   open,
   onClose,
   email,
+  tab,
+  onChangeTab,
 }: Props) {
-  const [tab, setTab] = useState<AccountTab>("profile");
-
   useEffect(() => {
     if (!open) return;
 
@@ -41,9 +44,7 @@ export default function AccountCenterModal({
   if (!open) return null;
 
   const name = email ? email.split("@")[0] : "User";
-  const initials = email
-    ? email.slice(0, 2).toUpperCase()
-    : "AC";
+  const initials = email ? email.slice(0, 2).toUpperCase() : "AC";
 
   return (
     <div
@@ -91,7 +92,7 @@ export default function AccountCenterModal({
           </div>
         </div>
 
-        <AccountTabs active={tab} onChange={setTab} />
+        <AccountTabs active={tab} onChange={onChangeTab} />
 
         <div className="flex-1 overflow-y-auto px-7 py-6">
           {tab === "profile" && <ProfileTab email={email} />}

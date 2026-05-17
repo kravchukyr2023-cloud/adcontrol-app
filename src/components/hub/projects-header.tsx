@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { openAccountCenter } from "@/lib/account-center/open";
 
 export default function ProjectsHeader() {
   const router = useRouter();
@@ -65,14 +66,19 @@ export default function ProjectsHeader() {
             </svg>
           </button>
 
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-[#0B1020] border border-[#1B2238] flex items-center justify-center text-xs text-zinc-300">
+          <button
+            type="button"
+            onClick={() => openAccountCenter("profile")}
+            aria-label="Open Account Center"
+            className="flex items-center gap-2 border border-[#1B2238] hover:border-[#6D5EF8]/60 hover:bg-[#1B2238]/60 rounded-md pl-1 pr-2 py-1 transition group"
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6D5EF8] to-purple-600 flex items-center justify-center text-xs font-semibold text-white">
               {initials}
             </div>
-            <span className="hidden md:inline text-xs text-zinc-400 max-w-[140px] truncate">
-              {email}
+            <span className="hidden md:inline text-xs text-zinc-400 group-hover:text-white max-w-[140px] truncate transition">
+              {email || "Account"}
             </span>
-          </div>
+          </button>
 
           <button
             onClick={handleLogout}

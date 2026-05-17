@@ -1,3 +1,5 @@
+import AccountCenterMount from "@/components/account/account-center-mount";
+
 export default function HubLayout({
   children,
 }: {
@@ -6,6 +8,7 @@ export default function HubLayout({
   return (
     <div className="min-h-screen bg-[#050816] text-white">
       {children}
+      <AccountCenterMount />
     </div>
   );
 }

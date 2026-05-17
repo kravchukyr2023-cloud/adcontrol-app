@@ -1,6 +1,8 @@
 "use client";
 
-export type AccountTab = "profile" | "billing" | "support" | "logout";
+import { AccountTab } from "@/lib/account-center/open";
+
+export type { AccountTab };
 
 type Props = {
   active: AccountTab;

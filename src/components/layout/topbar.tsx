@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+import { openAccountCenter } from "@/lib/account-center/open";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -15,6 +18,22 @@ const TITLES: Record<string, string> = {
 export default function Topbar() {
   const pathname = usePathname();
   const title = TITLES[pathname] ?? "Workspace";
+  const [email, setEmail] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setEmail(data.session?.user.email ?? "");
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const initials = email ? email.slice(0, 2).toUpperCase() : "AC";
 
   return (
     <header className="h-16 bg-[#0c0e18] border-b border-[#1B2238] flex items-center justify-between gap-4 px-4 lg:px-6 sticky top-0 z-30">
@@ -77,6 +96,20 @@ export default function Topbar() {
             <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
           </svg>
           Sync
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openAccountCenter("profile")}
+          aria-label="Open Account Center"
+          className="flex items-center gap-2 border border-[#1B2238] hover:border-[#6D5EF8]/60 hover:bg-[#1B2238]/60 rounded-md pl-1 pr-2 py-1 transition group"
+        >
+          <span className="w-7 h-7 rounded-full bg-gradient-to-br from-[#6D5EF8] to-purple-600 flex items-center justify-center text-white text-[10px] font-semibold">
+            {initials}
+          </span>
+          <span className="hidden lg:inline text-xs text-zinc-300 group-hover:text-white max-w-[140px] truncate transition">
+            {email || "Account"}
+          </span>
         </button>
 
       </div>

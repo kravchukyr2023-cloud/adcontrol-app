@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import CreateProjectWizard from "@/components/hub/create-project-wizard";
-import { emitActiveProjectChange } from "@/hooks/use-active-project";
+import ProjectLimitModal from "@/components/billing/project-limit-modal";
+import SubscriptionRequiredModal from "@/components/billing/subscription-required-modal";
+import {
+  ACTIVE_PROJECT_CHANGED,
+  emitActiveProjectChange,
+} from "@/hooks/use-active-project";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import { canCreateProject } from "@/lib/billing/can-create-project";
+import { getProjectUsage } from "@/lib/billing/get-project-usage";
+import { getAccessibleProjects } from "@/lib/billing/get-accessible-projects";
 
 const ACTIVE_KEY = "adcontrol_active_project_id";
 
@@ -13,6 +22,7 @@ type Project = {
   name: string;
   currency: string;
   description: string | null;
+  created_at: string | null;
 };
 
 function buildInitials(name: string): string {
@@ -26,6 +36,7 @@ function buildInitials(name: string): string {
 
 export default function ProjectSwitcher() {
   const router = useRouter();
+  const { plan, limits } = useEntitlements();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => {
@@ -34,6 +45,8 @@ export default function ProjectSwitcher() {
   });
   const [open, setOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [subRequiredOpen, setSubRequiredOpen] = useState(false);
 
   const ref = useRef<HTMLDivElement>(null);
 
@@ -43,7 +56,7 @@ export default function ProjectSwitcher() {
     const run = async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("id, name, currency, description")
+        .select("id, name, currency, description, created_at")
         .order("created_at", { ascending: false });
 
       if (cancelled) return;
@@ -53,20 +66,7 @@ export default function ProjectSwitcher() {
         return;
       }
 
-      const list = data as Project[];
-      setProjects(list);
-
-      const stored = localStorage.getItem(ACTIVE_KEY);
-      const exists = stored && list.some((p) => p.id === stored);
-
-      if (!exists && list.length > 0) {
-        const newId = list[0].id;
-        setActiveId(newId);
-        localStorage.setItem(ACTIVE_KEY, newId);
-      } else if (!list.length) {
-        setActiveId(null);
-        localStorage.removeItem(ACTIVE_KEY);
-      }
+      setProjects(data as Project[]);
     };
 
     run();
@@ -75,6 +75,34 @@ export default function ProjectSwitcher() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      if (activeId !== null) {
+        emitActiveProjectChange(null);
+      }
+      return;
+    }
+
+    const { accessible } = getAccessibleProjects(
+      projects,
+      limits.projects
+    );
+
+    if (accessible.length === 0) {
+      if (activeId !== null) {
+        emitActiveProjectChange(null);
+      }
+      return;
+    }
+
+    const isAccessible =
+      activeId && accessible.some((p) => p.id === activeId);
+
+    if (!isAccessible) {
+      emitActiveProjectChange(accessible[0].id);
+    }
+  }, [projects, limits.projects, activeId]);
 
   useEffect(() => {
     if (!open) return;
@@ -98,31 +126,49 @@ export default function ProjectSwitcher() {
   }, [open]);
 
   useEffect(() => {
+    function onActiveChange(e: Event) {
+      const ce = e as CustomEvent<{ id: string | null }>;
+      setActiveId(ce.detail?.id ?? null);
+    }
     function onStorage(e: StorageEvent) {
       if (e.key === ACTIVE_KEY) {
         setActiveId(e.newValue);
       }
     }
+    window.addEventListener(ACTIVE_PROJECT_CHANGED, onActiveChange);
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED, onActiveChange);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
-  function handleSwitch(id: string) {
-    setActiveId(id);
+  function handleSwitch(id: string, locked: boolean) {
+    if (locked) {
+      setOpen(false);
+      setSubRequiredOpen(true);
+      return;
+    }
     emitActiveProjectChange(id);
+    setActiveId(id);
     setOpen(false);
     router.push("/dashboard");
   }
 
-  function handleCreateNew() {
+  async function handleCreateNew() {
     setOpen(false);
-    setWizardOpen(true);
+    const fresh = await getProjectUsage();
+    if (canCreateProject(fresh.projects, limits)) {
+      setWizardOpen(true);
+    } else {
+      setLimitOpen(true);
+    }
   }
 
   async function handleAfterCreate() {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, name, currency, description")
+      .select("id, name, currency, description, created_at")
       .order("created_at", { ascending: false });
 
     if (error || !data) return;
@@ -135,8 +181,12 @@ export default function ProjectSwitcher() {
     }
   }
 
-  const active =
-    projects.find((p) => p.id === activeId) ?? null;
+  const { accessible, locked } = getAccessibleProjects(
+    projects,
+    limits.projects
+  );
+  const accessibleIds = new Set(accessible.map((p) => p.id));
+  const active = projects.find((p) => p.id === activeId) ?? null;
 
   return (
     <div ref={ref} className="relative">
@@ -190,17 +240,26 @@ export default function ProjectSwitcher() {
             ) : (
               projects.map((p) => {
                 const isActive = p.id === activeId;
+                const isLocked = !accessibleIds.has(p.id);
                 return (
                   <button
                     key={p.id}
-                    onClick={() => handleSwitch(p.id)}
+                    onClick={() => handleSwitch(p.id, isLocked)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 border-b border-[#2A2D3A] last:border-b-0 text-left transition ${
                       isActive
                         ? "bg-[#6D5EF8]/10"
+                        : isLocked
+                        ? "opacity-60 hover:bg-rose-500/5"
                         : "hover:bg-[#1B2238]/40"
                     }`}
                   >
-                    <div className="w-7 h-7 rounded-md bg-gradient-to-br from-[#6D5EF8] to-purple-600 flex items-center justify-center text-white text-[10px] font-semibold shrink-0">
+                    <div
+                      className={
+                        isLocked
+                          ? "w-7 h-7 rounded-md bg-zinc-800 flex items-center justify-center text-zinc-500 text-[10px] font-semibold shrink-0"
+                          : "w-7 h-7 rounded-md bg-gradient-to-br from-[#6D5EF8] to-purple-600 flex items-center justify-center text-white text-[10px] font-semibold shrink-0"
+                      }
+                    >
                       {buildInitials(p.name)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -208,10 +267,12 @@ export default function ProjectSwitcher() {
                         {p.name}
                       </p>
                       <p className="text-[11px] text-zinc-500 truncate">
-                        {p.description?.trim() || "Meta Ads"}
+                        {isLocked
+                          ? "Paused — payment required"
+                          : (p.description?.trim() || "Meta Ads")}
                       </p>
                     </div>
-                    {isActive && (
+                    {isActive && !isLocked && (
                       <svg
                         width="12"
                         height="12"
@@ -226,11 +287,33 @@ export default function ProjectSwitcher() {
                         <path d="M5 13l4 4L19 7" />
                       </svg>
                     )}
+                    {isLocked && (
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-rose-300 shrink-0"
+                      >
+                        <rect x="3" y="11" width="18" height="11" rx="2" />
+                        <path d="M7 11V7a5 5 0 0110 0v4" />
+                      </svg>
+                    )}
                   </button>
                 );
               })
             )}
           </div>
+
+          {locked.length > 0 && (
+            <div className="px-3 py-2 border-t border-[#2A2D3A] bg-rose-500/5 text-[10px] text-rose-300">
+              {locked.length} project{locked.length === 1 ? "" : "s"} paused. Restore payment to unlock.
+            </div>
+          )}
 
           <button
             onClick={handleCreateNew}
@@ -247,6 +330,18 @@ export default function ProjectSwitcher() {
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
         onCreated={handleAfterCreate}
+      />
+
+      <ProjectLimitModal
+        open={limitOpen}
+        plan={plan}
+        currentLimit={limits.projects}
+        onClose={() => setLimitOpen(false)}
+      />
+
+      <SubscriptionRequiredModal
+        open={subRequiredOpen}
+        onClose={() => setSubRequiredOpen(false)}
       />
     </div>
   );

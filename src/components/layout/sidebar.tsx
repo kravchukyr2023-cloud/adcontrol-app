@@ -5,12 +5,17 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import ProjectSwitcher from "./project-switcher";
-import AccountCenterModal from "@/components/account/account-center-modal";
+import FeatureLockedModal from "@/components/billing/feature-locked-modal";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import { canAccess } from "@/lib/billing/feature-access";
+import { FeatureId } from "@/config/plans";
+import { openAccountCenter } from "@/lib/account-center/open";
 
 type NavItem = {
   href: string;
   label: string;
   icon: React.ReactNode;
+  gate?: FeatureId;
 };
 
 const NAV: NavItem[] = [
@@ -79,20 +84,35 @@ const NAV: NavItem[] = [
   },
 ];
 
+function LockBadge() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0110 0v4" />
+    </svg>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const { plan, loading } = useEntitlements();
   const [email, setEmail] = useState("");
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [lockedFeature, setLockedFeature] = useState<FeatureId | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let cancelled = false;
+    const run = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
       setEmail(data.session?.user.email ?? "");
-    });
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const initials = email
-    ? email.slice(0, 2).toUpperCase()
-    : "AC";
+  const initials = email ? email.slice(0, 2).toUpperCase() : "AC";
 
   return (
     <aside className="w-64 shrink-0 bg-[#0B1020] border-r border-[#1B2238] flex flex-col">
@@ -120,6 +140,24 @@ export default function Sidebar() {
           const active =
             pathname === item.href ||
             pathname.startsWith(item.href + "/");
+
+          const locked =
+            !loading && item.gate ? !canAccess(item.gate, plan) : false;
+
+          if (locked) {
+            return (
+              <button
+                key={item.href}
+                onClick={() => setLockedFeature(item.gate ?? null)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-[#1B2238]/30 text-sm transition opacity-60 text-left"
+              >
+                <span className="text-zinc-600">{item.icon}</span>
+                <span className="flex-1 truncate">{item.label}</span>
+                <LockBadge />
+              </button>
+            );
+          }
+
           return (
             <Link
               key={item.href}
@@ -130,11 +168,7 @@ export default function Sidebar() {
                   : "flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent text-zinc-400 hover:text-white hover:bg-[#1B2238]/40 text-sm transition"
               }
             >
-              <span
-                className={
-                  active ? "text-[#a99cff]" : "text-zinc-500"
-                }
-              >
+              <span className={active ? "text-[#a99cff]" : "text-zinc-500"}>
                 {item.icon}
               </span>
               {item.label}
@@ -145,7 +179,7 @@ export default function Sidebar() {
 
       <div className="px-3 py-3 border-t border-[#1B2238]">
         <button
-          onClick={() => setAccountOpen(true)}
+          onClick={() => openAccountCenter()}
           className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#1B2238]/40 transition text-left"
         >
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#6D5EF8] to-purple-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
@@ -155,28 +189,20 @@ export default function Sidebar() {
             <p className="text-sm font-medium text-white truncate">
               {email || "User"}
             </p>
-            <p className="text-[11px] text-zinc-500">Starter</p>
+            <p className="text-[11px] text-zinc-500">
+              {loading ? "—" : plan.name}
+            </p>
           </div>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-zinc-500 shrink-0"
-          >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500 shrink-0">
             <path d="M9 18l6-6-6-6" />
           </svg>
         </button>
       </div>
 
-      <AccountCenterModal
-        open={accountOpen}
-        onClose={() => setAccountOpen(false)}
-        email={email}
+      <FeatureLockedModal
+        open={lockedFeature !== null}
+        feature={lockedFeature}
+        onClose={() => setLockedFeature(null)}
       />
     </aside>
   );

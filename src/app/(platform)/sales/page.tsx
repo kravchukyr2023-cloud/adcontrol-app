@@ -1,9 +1,21 @@
-const KPIS = [
+"use client";
+
+import { useEntitlements } from "@/hooks/use-entitlements";
+import { canAccess } from "@/lib/billing/feature-access";
+import LockedPagePlaceholder from "@/components/billing/locked-page-placeholder";
+
+const KPIS_FULL = [
   { label: "Revenue", value: "$0", note: "0 orders" },
   { label: "Orders", value: "0", note: "0 today" },
   { label: "AOV", value: "$0", note: "Across all sources" },
   { label: "Real ROAS", value: "0.0x", note: "vs Meta 0.0x" },
   { label: "Budget", value: "$0", note: "0% used" },
+];
+
+const KPIS_MANUAL = [
+  { label: "Revenue", value: "$0", note: "Manual orders" },
+  { label: "Orders", value: "0", note: "0 today" },
+  { label: "AOV", value: "$0", note: "Across manual entries" },
 ];
 
 const COMPARE_COLS = [
@@ -35,12 +47,147 @@ const ORDER_COLS = [
   "utm_term",
 ];
 
-const SOURCE_TABS = [
+const ORDER_COLS_MANUAL = [
+  "Order ID",
+  "Date",
+  "Customer",
+  "Product",
+  "Revenue",
+  "Notes",
+];
+
+const SOURCE_TABS_FULL = [
   { id: "shopify", label: "Shopify" },
   { id: "manual", label: "Manual" },
 ];
 
 export default function SalesPage() {
+  const { plan, loading } = useEntitlements();
+
+  if (loading) {
+    return <div className="text-sm text-zinc-500">Loading…</div>;
+  }
+
+  const hasManual = canAccess("sales_manual", plan);
+  const hasFull = canAccess("sales_full_attribution", plan);
+
+  if (!hasManual && !hasFull) {
+    return <LockedPagePlaceholder feature="sales_full_attribution" />;
+  }
+
+  if (hasFull) {
+    return <SalesFull />;
+  }
+
+  return <SalesRestricted />;
+}
+
+function SalesRestricted() {
+  return (
+    <div className="space-y-6">
+
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
+            Sales & Attribution
+          </h1>
+          <p className="text-sm text-zinc-400 mt-2 max-w-2xl">
+            Manual sales tracking. Connect Shopify or Google Sheets on higher plans to unlock full attribution.
+          </p>
+        </div>
+
+        <button className="shrink-0 h-10 px-4 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition">
+          + Add Order
+        </button>
+      </div>
+
+      <div className="border border-[#6D5EF8]/40 bg-[#6D5EF8]/10 rounded-2xl px-5 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-white">
+            You are using Sales in restricted (manual) mode
+          </p>
+          <p className="text-xs text-zinc-400 mt-1">
+            Full attribution, Shopify sync and Real-vs-Meta ROAS comparison are available on Operator or higher.
+          </p>
+        </div>
+        <button
+          disabled
+          className="h-9 px-4 rounded-lg bg-[#6D5EF8]/20 text-zinc-400 text-xs font-medium cursor-not-allowed shrink-0"
+        >
+          Upgrade Plan
+        </button>
+      </div>
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {KPIS_MANUAL.map((k) => (
+          <div
+            key={k.label}
+            className="border border-[#1B2238] rounded-2xl p-5 bg-[#0B1020]"
+          >
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+              {k.label}
+            </p>
+            <p className="text-2xl font-bold mt-2">{k.value}</p>
+            <p className="text-xs text-zinc-500 mt-2">{k.note}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="border border-[#1B2238] rounded-2xl bg-[#0B1020] overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#1B2238] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="h-8 px-3 rounded-lg text-xs border border-[#6D5EF8] bg-[#6D5EF8]/15 text-white flex items-center">
+              Manual
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
+            <span>
+              Revenue: <span className="text-white">$0</span>
+            </span>
+            <span className="text-zinc-700">·</span>
+            <span>
+              Orders: <span className="text-white">0</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[800px]">
+            <thead className="text-[10px] text-zinc-500 uppercase tracking-wider bg-black/30">
+              <tr>
+                {ORDER_COLS_MANUAL.map((c, i) => (
+                  <th
+                    key={c}
+                    className={
+                      i === 0
+                        ? "text-left px-6 py-3 font-medium"
+                        : "text-left px-3 py-3 font-medium"
+                    }
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td
+                  colSpan={ORDER_COLS_MANUAL.length}
+                  className="text-center px-6 py-12 text-zinc-500 text-sm"
+                >
+                  No manual orders yet. Use “+ Add Order” to start tracking.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  );
+}
+
+function SalesFull() {
   return (
     <div className="space-y-6">
 
@@ -95,7 +242,7 @@ export default function SalesPage() {
       </section>
 
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {KPIS.map((k) => (
+        {KPIS_FULL.map((k) => (
           <div
             key={k.label}
             className="border border-[#1B2238] rounded-2xl p-5 bg-[#0B1020]"
@@ -111,9 +258,7 @@ export default function SalesPage() {
 
       <section className="border border-[#1B2238] rounded-2xl bg-[#0B1020] overflow-hidden">
         <div className="px-6 py-4 border-b border-[#1B2238] flex items-center justify-between">
-          <h3 className="text-sm font-semibold">
-            Meta vs Real ROAS
-          </h3>
+          <h3 className="text-sm font-semibold">Meta vs Real ROAS</h3>
           <span className="text-xs text-zinc-500">0 rows</span>
         </div>
 
@@ -153,7 +298,7 @@ export default function SalesPage() {
 
         <div className="px-6 py-4 border-b border-[#1B2238] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div className="flex items-center gap-2">
-            {SOURCE_TABS.map((t, i) => (
+            {SOURCE_TABS_FULL.map((t, i) => (
               <button
                 key={t.id}
                 className={
@@ -217,16 +362,10 @@ export default function SalesPage() {
         <div className="px-6 py-3 border-t border-[#1B2238] flex items-center justify-between text-xs text-zinc-500">
           <span>Showing 0 of 0</span>
           <div className="flex items-center gap-1">
-            <button
-              disabled
-              className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50"
-            >
+            <button disabled className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50">
               Prev
             </button>
-            <button
-              disabled
-              className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50"
-            >
+            <button disabled className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50">
               Next
             </button>
           </div>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { emitActiveProjectChange } from "@/hooks/use-active-project";
+import { createBaseResources } from "@/lib/resources/create-base-resources";
 
 type Props = {
   open: boolean;
@@ -155,6 +156,12 @@ export default function CreateProjectWizard({
         .insert({ project_id: project.id });
 
       if (settingsError) throw new Error(settingsError.message);
+
+      await createBaseResources({
+        projectId: project.id,
+        projectName: name.trim(),
+        userId: session.user.id,
+      });
 
       emitActiveProjectChange(project.id);
 

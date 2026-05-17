@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useActiveProject } from "@/hooks/use-active-project";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import { canAccess } from "@/lib/billing/feature-access";
+import LockedPagePlaceholder from "@/components/billing/locked-page-placeholder";
 
 type Template = {
   id: string;
@@ -70,6 +73,20 @@ function buildUrl(
 }
 
 export default function UtmPage() {
+  const { plan, loading } = useEntitlements();
+
+  if (loading) {
+    return <div className="text-sm text-zinc-500">Loading…</div>;
+  }
+
+  if (!canAccess("utm_generator", plan)) {
+    return <LockedPagePlaceholder feature="utm_generator" />;
+  }
+
+  return <UtmPageContent />;
+}
+
+function UtmPageContent() {
   const { project } = useActiveProject();
   const projectWebsite = project?.website_url ?? "";
   const projectKey = project?.id ?? "no-project";

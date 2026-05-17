@@ -1,5 +1,6 @@
 import Sidebar from "@/components/layout/sidebar";
 import Topbar from "@/components/layout/topbar";
+import AccountCenterMount from "@/components/account/account-center-mount";
 
 export default function PlatformLayout({
   children,
@@ -17,6 +18,8 @@ export default function PlatformLayout({
           {children}
         </main>
       </div>
+
+      <AccountCenterMount />
     </div>
   );
 }

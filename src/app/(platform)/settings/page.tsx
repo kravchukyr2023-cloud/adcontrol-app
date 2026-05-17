@@ -10,6 +10,7 @@ import {
   useActiveProject,
   ActiveProject,
 } from "@/hooks/use-active-project";
+import ResourcesSections from "@/components/settings/resources-sections";
 
 const inputCls =
   "w-full h-11 px-3.5 bg-[#050816] border border-[#1B2238] rounded-xl outline-none text-sm text-white focus:border-[#6D5EF8] transition placeholder:text-zinc-600";
@@ -336,6 +337,8 @@ function SettingsForm({ project }: { project: ActiveProject }) {
           {saving ? "Saving…" : "Save Changes"}
         </button>
       </div>
+
+      <ResourcesSections projectId={project.id} />
 
       <SectionCard
         title="Danger Zone"

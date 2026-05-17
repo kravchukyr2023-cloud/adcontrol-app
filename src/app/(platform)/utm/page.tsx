@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useActiveProject } from "@/hooks/use-active-project";
 
 type Template = {
   id: string;
@@ -69,7 +70,20 @@ function buildUrl(
 }
 
 export default function UtmPage() {
-  const [website, setWebsite] = useState("");
+  const { project } = useActiveProject();
+  const projectWebsite = project?.website_url ?? "";
+  const projectKey = project?.id ?? "no-project";
+
+  return (
+    <UtmForm
+      key={projectKey}
+      projectWebsite={projectWebsite}
+    />
+  );
+}
+
+function UtmForm({ projectWebsite }: { projectWebsite: string }) {
+  const [website, setWebsite] = useState(projectWebsite);
   const [values, setValues] = useState<Record<UtmKey, string>>({
     utm_source: "",
     utm_medium: "",
@@ -98,7 +112,7 @@ export default function UtmPage() {
   }
 
   function reset() {
-    setWebsite("");
+    setWebsite(projectWebsite);
     setValues({
       utm_source: "",
       utm_medium: "",
@@ -166,6 +180,17 @@ export default function UtmPage() {
             placeholder="https://example.com/page"
             className={inputCls}
           />
+          {projectWebsite && (
+            <p className="text-xs text-zinc-500 mt-2">
+              Prefilled from project settings.{" "}
+              <button
+                onClick={() => setWebsite(projectWebsite)}
+                className="text-[#a99cff] hover:text-white transition"
+              >
+                Reset to project URL
+              </button>
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

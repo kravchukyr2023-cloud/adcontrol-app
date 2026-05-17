@@ -2,14 +2,10 @@ type Props = {
   id: string;
   name: string;
   currency: string;
+  monthlyRevenueGoal: number;
+  monthlyAdBudget: number;
+  targetRoas: number;
   onOpen: (id: string) => void;
-};
-
-const mockMetrics = {
-  roas: "3.2",
-  spend: "$8.4k",
-  revenue: "$26.8k",
-  campaigns: "12",
 };
 
 function buildInitials(name: string): string {
@@ -22,10 +18,21 @@ function buildInitials(name: string): string {
   return parts.join("") || "P";
 }
 
+function fmt(currency: string, value: number): string {
+  if (!value) return `${currency} —`;
+  if (value >= 1000) {
+    return `${currency} ${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+  }
+  return `${currency} ${value.toLocaleString()}`;
+}
+
 export default function ProjectCard({
   id,
   name,
   currency,
+  monthlyRevenueGoal,
+  monthlyAdBudget,
+  targetRoas,
   onOpen,
 }: Props) {
   const initials = buildInitials(name);
@@ -38,8 +45,8 @@ export default function ProjectCard({
           {initials}
         </div>
 
-        <span className="text-[10px] uppercase tracking-wider text-emerald-400 border border-emerald-400/30 bg-emerald-400/5 px-2 py-1 rounded-full">
-          Active
+        <span className="text-[10px] uppercase tracking-wider text-zinc-400 border border-[#1B2238] bg-black/30 px-2 py-1 rounded-full">
+          Waiting for integrations
         </span>
       </div>
 
@@ -50,11 +57,24 @@ export default function ProjectCard({
         Meta Ads · {currency}
       </p>
 
-      <div className="grid grid-cols-4 gap-2 mb-6">
-        <Metric label="ROAS" value={mockMetrics.roas} />
-        <Metric label="Spend" value={mockMetrics.spend} />
-        <Metric label="Revenue" value={mockMetrics.revenue} />
-        <Metric label="Camp." value={mockMetrics.campaigns} />
+      <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-3">
+        Monthly targets
+      </p>
+      <div className="grid grid-cols-3 gap-2 mb-6">
+        <Metric
+          label="Revenue"
+          value={fmt(currency, monthlyRevenueGoal)}
+        />
+        <Metric label="Spend" value={fmt(currency, monthlyAdBudget)} />
+        <Metric
+          label="ROAS"
+          value={targetRoas ? `${targetRoas.toFixed(1)}x` : "—"}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-6">
+        <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+        Meta not connected · No synced data
       </div>
 
       <button
@@ -79,7 +99,7 @@ function Metric({
       <p className="text-[10px] uppercase tracking-wider text-zinc-500">
         {label}
       </p>
-      <p className="text-sm font-semibold text-white mt-0.5">
+      <p className="text-sm font-semibold text-white mt-0.5 truncate">
         {value}
       </p>
     </div>

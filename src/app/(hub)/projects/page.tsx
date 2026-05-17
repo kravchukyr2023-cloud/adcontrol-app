@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { emitActiveProjectChange } from "@/hooks/use-active-project";
 
 import ProjectsHeader from "@/components/hub/projects-header";
 import ProjectCard from "@/components/hub/project-card";
@@ -10,18 +11,21 @@ import EmptyProjects from "@/components/hub/empty-projects";
 import CreateProjectCard from "@/components/hub/create-project-card";
 import CreateProjectWizard from "@/components/hub/create-project-wizard";
 
-const ACTIVE_KEY = "adcontrol_active_project_id";
-
 type Project = {
   id: string;
   name: string;
   currency: string;
+  monthly_revenue_goal: number;
+  monthly_ad_budget: number;
+  target_roas: number;
 };
 
 async function fetchProjects(): Promise<Project[]> {
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, currency")
+    .select(
+      "id, name, currency, monthly_revenue_goal, monthly_ad_budget, target_roas"
+    )
     .order("created_at", { ascending: false });
 
   if (error || !data) return [];
@@ -57,9 +61,7 @@ export default function ProjectsPage() {
   }
 
   function handleOpen(id: string) {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ACTIVE_KEY, id);
-    }
+    emitActiveProjectChange(id);
     router.push("/dashboard");
   }
 
@@ -113,6 +115,9 @@ export default function ProjectsPage() {
                 id={p.id}
                 name={p.name}
                 currency={p.currency}
+                monthlyRevenueGoal={p.monthly_revenue_goal}
+                monthlyAdBudget={p.monthly_ad_budget}
+                targetRoas={p.target_roas}
                 onOpen={handleOpen}
               />
             ))}

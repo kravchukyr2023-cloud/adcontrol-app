@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import CreateProjectWizard from "@/components/hub/create-project-wizard";
+import { emitActiveProjectChange } from "@/hooks/use-active-project";
 
 const ACTIVE_KEY = "adcontrol_active_project_id";
 
@@ -96,9 +97,19 @@ export default function ProjectSwitcher() {
     };
   }, [open]);
 
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key === ACTIVE_KEY) {
+        setActiveId(e.newValue);
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   function handleSwitch(id: string) {
     setActiveId(id);
-    localStorage.setItem(ACTIVE_KEY, id);
+    emitActiveProjectChange(id);
     setOpen(false);
     router.push("/dashboard");
   }

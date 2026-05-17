@@ -1,10 +1,6 @@
-const KPIS = [
-  { label: "Spend", value: "$0", note: "0% vs plan" },
-  { label: "Revenue", value: "$0", note: "0 orders" },
-  { label: "Purchases", value: "0", note: "0 today" },
-  { label: "CPA", value: "$0", note: "Target $0" },
-  { label: "ROAS", value: "0.0x", note: "Target 0.0x" },
-];
+"use client";
+
+import { useActiveProject } from "@/hooks/use-active-project";
 
 type Severity = "critical" | "warning" | "opportunity";
 
@@ -52,7 +48,48 @@ const SPEND_BARS = [40, 55, 48, 70, 60, 75, 90];
 const ROAS_POINTS_CAB = "0,80 30,60 60,65 90,45 120,55 150,35 180,40";
 const ROAS_POINTS_REAL = "0,90 30,75 60,80 90,60 120,70 150,55 180,58";
 
+function fmt(currency: string, value: number): string {
+  if (!value) return `${currency} 0`;
+  return `${currency} ${value.toLocaleString()}`;
+}
+
 export default function DashboardPage() {
+  const { project } = useActiveProject();
+
+  const currency = project?.currency ?? "USD";
+  const targetRevenue = project?.monthly_revenue_goal ?? 0;
+  const targetBudget = project?.monthly_ad_budget ?? 0;
+  const targetRoas = project?.target_roas ?? 0;
+  const targetCpa = project?.target_cpa ?? 0;
+
+  const KPIS = [
+    {
+      label: "Spend",
+      value: fmt(currency, 0),
+      note: `Budget ${fmt(currency, targetBudget)}`,
+    },
+    {
+      label: "Revenue",
+      value: fmt(currency, 0),
+      note: `Goal ${fmt(currency, targetRevenue)}`,
+    },
+    {
+      label: "Purchases",
+      value: "0",
+      note: "0 today",
+    },
+    {
+      label: "CPA",
+      value: fmt(currency, 0),
+      note: `Target ${fmt(currency, targetCpa)}`,
+    },
+    {
+      label: "ROAS",
+      value: "0.0x",
+      note: `Target ${targetRoas ? targetRoas.toFixed(1) : "0.0"}x`,
+    },
+  ];
+
   return (
     <div className="space-y-6">
 

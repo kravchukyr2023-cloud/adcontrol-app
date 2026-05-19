@@ -84,7 +84,7 @@ export default function ProjectsPage() {
   const isEmpty = projects !== null && projects.length === 0;
 
   const split = projects
-    ? getAccessibleProjects(projects, limits.projects)
+    ? getAccessibleProjects(projects, limits.projectsTotal)
     : { accessible: [], locked: [] };
   const accessibleIds = new Set(split.accessible.map((p) => p.id));
 
@@ -161,7 +161,7 @@ export default function ProjectsPage() {
       <ProjectLimitModal
         open={limitOpen}
         plan={plan}
-        currentLimit={limits.projects}
+        currentLimit={limits.projectsTotal}
         onClose={() => setLimitOpen(false)}
       />
 

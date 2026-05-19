@@ -102,7 +102,45 @@ export async function getActiveAccessToken(
 ): Promise<ActiveTokenResult | null> {
   const conn = await getActiveConnection(userId);
   if (!conn) return null;
+  return loadTokenForConnection(conn);
+}
 
+/**
+ * Load a specific connection by id (ownership-checked).
+ * Used by the project-aware connection resolver.
+ */
+export async function getConnectionById(
+  userId: string,
+  connectionId: string
+): Promise<ConnectionSummary | null> {
+  const supabase = getAdminSupabase();
+  const { data, error } = await supabase
+    .from("meta_connections")
+    .select(SELECT_COLS)
+    .eq("id", connectionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ConnectionSummary;
+}
+
+/**
+ * Load access token for a specific connection (ownership-checked).
+ * Returns null if connection is not active or token row missing.
+ */
+export async function getAccessTokenForConnection(
+  userId: string,
+  connectionId: string
+): Promise<ActiveTokenResult | null> {
+  const conn = await getConnectionById(userId, connectionId);
+  if (!conn || conn.status !== "active") return null;
+  return loadTokenForConnection(conn);
+}
+
+async function loadTokenForConnection(
+  conn: ConnectionSummary
+): Promise<ActiveTokenResult | null> {
   const supabase = getAdminSupabase();
   const { data, error } = await supabase
     .from("meta_connection_tokens")

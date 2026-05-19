@@ -4,5 +4,5 @@ export function canCreateProject(
   usedProjects: number,
   limits: EffectiveLimits
 ): boolean {
-  return usedProjects < limits.projects;
+  return usedProjects < limits.projectsTotal;
 }

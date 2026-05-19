@@ -1,143 +1,256 @@
 import "server-only";
 import { getAdminSupabase } from "./admin-supabase";
-import {
-  deleteBindingSyncStates,
-  initBindingSyncStates,
-} from "./sync-states";
+import { initResourceSyncStates } from "./sync-states";
 
 /**
- * Wires a Meta BM + Ad Account to an AdControl project via the canonical
- * project_meta_bindings table.
+ * Many-to-many project ↔ Meta wiring helpers.
  *
- * Caller MUST verify project ownership against auth.uid() before calling.
+ * Replaces the prior 1:1:1 `wireProject()` with four independent operations:
+ *  - addProjectBm        — attach a BM to a project (creates BM membership)
+ *  - removeProjectBm     — soft-detach (status='inactive') + cascade AA selections
+ *  - selectProjectAa     — select an AA under a BM membership
+ *  - deselectProjectAa   — soft-deselect (status='inactive')
  *
- * V1 invariant: at most one active binding per project (enforced by
- * partial UNIQUE INDEX on (project_id) WHERE status='active'). Any
- * existing active binding for the same project is updated in place.
+ * Caller must verify project ownership against auth.uid() and call
+ * enforceAddBmLimit / enforceAddAaLimit before these helpers.
  *
- * This function does NOT touch the legacy project_business_managers /
- * business_manager_ad_accounts hierarchy or the deprecated
- * bm_external_id / ad_account_external_id columns. Those remain for
- * Sprint 2.5 billing-counter tracking only.
+ * Resource-centric sync_states (one row per (user_id, resource_type,
+ * resource_id)) are seeded on AA selection — never deleted on deselection,
+ * because the same Meta resource may still be active in another project.
  */
-export async function wireProject(params: {
+
+type AddProjectBmInput = {
   userId: string;
   projectId: string;
   metaConnectionId: string;
   metaBmRowId: string;
-  metaAdAccountRowId: string;
-  metaUserId: string;
-  metaBmId: string;
-  metaAdAccountId: string;
-}): Promise<{ bindingId: string }> {
-  const supabase = getAdminSupabase();
+};
+
+export async function addProjectBm(
+  params: AddProjectBmInput
+): Promise<{ projectMetaBusinessManagerId: string }> {
+  const sb = getAdminSupabase();
   const now = new Date().toISOString();
 
-  const { data: existing } = await supabase
-    .from("project_meta_bindings")
-    .select("id")
+  // Reactivate if there's already a (project, BM) row, regardless of status.
+  const { data: existing } = await sb
+    .from("project_meta_business_managers")
+    .select("id, status")
     .eq("project_id", params.projectId)
-    .eq("user_id", params.userId)
-    .eq("status", "active")
+    .eq("meta_business_manager_id", params.metaBmRowId)
     .limit(1)
     .maybeSingle();
 
-  let bindingId: string;
+  if (existing) {
+    const row = existing as { id: string; status: string };
+    if (row.status !== "active") {
+      const { error } = await sb
+        .from("project_meta_business_managers")
+        .update({
+          status: "active",
+          meta_connection_id: params.metaConnectionId,
+          added_at: now,
+          removed_at: null,
+          updated_at: now,
+        })
+        .eq("id", row.id);
+      if (error) {
+        throw new Error(`Failed to reactivate BM membership: ${error.message}`);
+      }
+    }
+    return { projectMetaBusinessManagerId: row.id };
+  }
+
+  const { data: inserted, error: insErr } = await sb
+    .from("project_meta_business_managers")
+    .insert({
+      user_id: params.userId,
+      project_id: params.projectId,
+      meta_connection_id: params.metaConnectionId,
+      meta_business_manager_id: params.metaBmRowId,
+      status: "active",
+      added_at: now,
+    })
+    .select("id")
+    .single();
+
+  if (insErr || !inserted) {
+    throw new Error(
+      `Failed to add BM membership: ${insErr?.message ?? "unknown"}`
+    );
+  }
+  return {
+    projectMetaBusinessManagerId: (inserted as { id: string }).id,
+  };
+}
+
+export async function removeProjectBm(params: {
+  userId: string;
+  projectMetaBusinessManagerId: string;
+}): Promise<void> {
+  const sb = getAdminSupabase();
+  const now = new Date().toISOString();
+
+  // Soft-deselect all AA selections under this BM membership first.
+  await sb
+    .from("project_meta_ad_accounts")
+    .update({ status: "inactive", deselected_at: now, updated_at: now })
+    .eq("project_meta_business_manager_id", params.projectMetaBusinessManagerId)
+    .eq("user_id", params.userId)
+    .eq("status", "active");
+
+  // Soft-deactivate the BM membership.
+  const { error } = await sb
+    .from("project_meta_business_managers")
+    .update({ status: "inactive", removed_at: now, updated_at: now })
+    .eq("id", params.projectMetaBusinessManagerId)
+    .eq("user_id", params.userId);
+
+  if (error) {
+    throw new Error(`Failed to remove BM membership: ${error.message}`);
+  }
+}
+
+type SelectProjectAaInput = {
+  userId: string;
+  projectId: string;
+  projectMetaBusinessManagerId: string;
+  metaAaRowId: string;
+  metaUserId: string;
+  metaBmId: string;
+  metaAdAccountId: string;
+};
+
+export async function selectProjectAa(
+  params: SelectProjectAaInput
+): Promise<{ projectMetaAdAccountId: string }> {
+  const sb = getAdminSupabase();
+  const now = new Date().toISOString();
+
+  // Reactivate existing (BM membership, AA) row if present.
+  const { data: existing } = await sb
+    .from("project_meta_ad_accounts")
+    .select("id, status")
+    .eq("project_meta_business_manager_id", params.projectMetaBusinessManagerId)
+    .eq("meta_ad_account_id", params.metaAaRowId)
+    .limit(1)
+    .maybeSingle();
+
+  let aaSelectionId: string;
 
   if (existing) {
-    bindingId = (existing as { id: string }).id;
-
-    await deleteBindingSyncStates(bindingId);
-
-    const { error: updErr } = await supabase
-      .from("project_meta_bindings")
-      .update({
-        meta_connection_id: params.metaConnectionId,
-        meta_business_manager_id: params.metaBmRowId,
-        meta_ad_account_id: params.metaAdAccountRowId,
-        status: "active",
-        bound_at: now,
-        unbound_at: null,
-        updated_at: now,
-      })
-      .eq("id", bindingId);
-
-    if (updErr) {
-      throw new Error(`Failed to update binding: ${updErr.message}`);
+    const row = existing as { id: string; status: string };
+    aaSelectionId = row.id;
+    if (row.status !== "active") {
+      const { error } = await sb
+        .from("project_meta_ad_accounts")
+        .update({
+          status: "active",
+          selected_at: now,
+          deselected_at: null,
+          updated_at: now,
+        })
+        .eq("id", row.id);
+      if (error) {
+        throw new Error(`Failed to reactivate AA selection: ${error.message}`);
+      }
     }
   } else {
-    const { data: inserted, error: insErr } = await supabase
-      .from("project_meta_bindings")
+    const { data: inserted, error: insErr } = await sb
+      .from("project_meta_ad_accounts")
       .insert({
         user_id: params.userId,
         project_id: params.projectId,
-        meta_connection_id: params.metaConnectionId,
-        meta_business_manager_id: params.metaBmRowId,
-        meta_ad_account_id: params.metaAdAccountRowId,
+        project_meta_business_manager_id:
+          params.projectMetaBusinessManagerId,
+        meta_ad_account_id: params.metaAaRowId,
         status: "active",
-        bound_at: now,
+        selected_at: now,
       })
       .select("id")
       .single();
 
     if (insErr || !inserted) {
-      throw new Error(`Failed to insert binding: ${insErr?.message}`);
+      throw new Error(
+        `Failed to select AA: ${insErr?.message ?? "unknown"}`
+      );
     }
-    bindingId = (inserted as { id: string }).id;
+    aaSelectionId = (inserted as { id: string }).id;
   }
 
-  await initBindingSyncStates({
+  // Seed/refresh sync_states for the underlying Meta resources.
+  // Resource-centric: same AA in multiple projects shares a single sync_state row.
+  await initResourceSyncStates({
     userId: params.userId,
-    projectId: params.projectId,
-    bindingId,
     metaUserId: params.metaUserId,
     metaBmId: params.metaBmId,
     metaAdAccountId: params.metaAdAccountId,
   });
 
-  return { bindingId };
+  return { projectMetaAdAccountId: aaSelectionId };
+}
+
+export async function deselectProjectAa(params: {
+  userId: string;
+  projectMetaAdAccountId: string;
+}): Promise<void> {
+  const sb = getAdminSupabase();
+  const now = new Date().toISOString();
+
+  const { error } = await sb
+    .from("project_meta_ad_accounts")
+    .update({ status: "inactive", deselected_at: now, updated_at: now })
+    .eq("id", params.projectMetaAdAccountId)
+    .eq("user_id", params.userId);
+
+  if (error) {
+    throw new Error(`Failed to deselect AA: ${error.message}`);
+  }
+
+  // Intentionally NOT deleting sync_states — the same Meta resource may still
+  // be active in another project. Sync state cleanup is out of scope for V1.
 }
 
 /**
- * Cascade binding status when the underlying Meta connection is disconnected.
- * Active bindings tied to this connection become 'disconnected', their
- * meta_sync_states pause.
+ * Cascade project Meta wiring when an OAuth connection is disconnected.
+ * Sets all BM memberships tied to this connection to status='disconnected'
+ * and same for their AA selections. Sync states remain — disconnection is
+ * connection-scoped, not resource-scoped (resource may be reachable via
+ * a different connection after reconnect).
  */
 export async function cascadeBindingsOnConnectionDisconnect(params: {
   userId: string;
   connectionId: string;
 }): Promise<void> {
-  const supabase = getAdminSupabase();
+  const sb = getAdminSupabase();
   const now = new Date().toISOString();
 
-  const { data: bindings } = await supabase
-    .from("project_meta_bindings")
+  const { data: bmRows } = await sb
+    .from("project_meta_business_managers")
     .select("id")
     .eq("user_id", params.userId)
     .eq("meta_connection_id", params.connectionId)
     .eq("status", "active");
 
-  if (!bindings || bindings.length === 0) return;
+  const bmIds = ((bmRows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  if (bmIds.length === 0) return;
 
-  const bindingIds = (bindings as Array<{ id: string }>).map(
-    (b) => b.id
-  );
-
-  await supabase
-    .from("project_meta_bindings")
+  await sb
+    .from("project_meta_ad_accounts")
     .update({
       status: "disconnected",
-      unbound_at: now,
+      deselected_at: now,
       updated_at: now,
     })
-    .in("id", bindingIds);
+    .in("project_meta_business_manager_id", bmIds)
+    .eq("status", "active");
 
-  await supabase
-    .from("meta_sync_states")
+  await sb
+    .from("project_meta_business_managers")
     .update({
-      sync_status: "paused",
+      status: "disconnected",
+      removed_at: now,
       updated_at: now,
     })
-    .in("binding_id", bindingIds)
-    .neq("sync_status", "paused");
+    .in("id", bmIds);
 }

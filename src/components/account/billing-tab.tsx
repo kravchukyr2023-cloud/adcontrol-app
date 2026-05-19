@@ -124,10 +124,10 @@ export default function BillingTab() {
   }
 
   const projectsPct =
-    limits.projects > 0
+    limits.projectsTotal > 0
       ? Math.min(
           100,
-          Math.round((usage.projects / limits.projects) * 100)
+          Math.round((usage.projects / limits.projectsTotal) * 100)
         )
       : 0;
 
@@ -238,19 +238,27 @@ export default function BillingTab() {
           <UsageRow
             label="Projects"
             used={usage.projects}
-            limit={limits.projects}
+            limit={limits.projectsTotal}
             pct={projectsPct}
           />
-          <UsageRow
-            label="Business Managers"
-            used={usage.businessManagers}
-            limit={limits.businessManagersTotal}
-          />
-          <UsageRow
-            label="Meta Ad Accounts"
-            used={usage.adAccounts}
-            limit={limits.adAccountsTotal}
-          />
+        </div>
+        <div className="mt-6 pt-5 border-t border-[#2A2D3A] space-y-2 text-xs text-zinc-400">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">
+            Per-project quotas
+          </p>
+          <p>
+            Up to{" "}
+            <span className="text-white">
+              {limits.businessManagersPerProject}
+            </span>{" "}
+            Business Manager
+            {limits.businessManagersPerProject === 1 ? "" : "s"} per project
+          </p>
+          <p>
+            Up to{" "}
+            <span className="text-white">{limits.adAccountsPerProject}</span>{" "}
+            Ad Account{limits.adAccountsPerProject === 1 ? "" : "s"} per project
+          </p>
         </div>
       </div>
 

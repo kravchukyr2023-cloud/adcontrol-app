@@ -5,27 +5,43 @@ import {
   markConnectionExpired,
 } from "@/server/meta/token-store";
 import { getProjectActiveAccessToken } from "@/server/meta/project-connection";
-import { fetchOwnedAdAccounts } from "@/server/meta/fetch-owned-ad-accounts";
-import { upsertAdAccounts } from "@/server/meta/upsert-ad-accounts";
-import { getAdminSupabase } from "@/server/meta/admin-supabase";
+import { fetchBusinessManagers } from "@/server/meta/fetch-business-managers";
+import { upsertBusinessManagers } from "@/server/meta/upsert-bms";
 import { recordConnectionEvent } from "@/server/meta/connection-events";
 import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+/**
+ * POST /api/meta/bms/refresh
+ *   body: { project_id?: string }
+ *
+ * Re-fetches /me/businesses from Meta using the already-stored access token
+ * and upserts results into meta_business_managers. Does NOT start a new
+ * OAuth flow. Uses project's bound connection when project_id is provided,
+ * else user-global most-recent (legacy).
+ *
+ * - 200 { connected: true,  bms: [...] }  — fresh list (success)
+ * - 200 { connected: false, bms: [] }     — no active connection
+ * - 200 { connected: false, expired: true, bms: [] }
+ *                                          — token expired; frontend shows Reconnect
+ * - 500 { connected: true,  bms: [], error } — other Meta API failure
+ *
+ * Cached BMs that Meta no longer returns are NOT removed (per Phase 1 rule).
+ */
+export async function POST(req: NextRequest) {
   try {
     return await handle(req);
   } catch (err) {
     if (isMissingEnvError(err)) {
-      console.error(`[meta/ad-accounts] ${err.message}`);
+      console.error(`[meta/bms/refresh] ${err.message}`);
       return NextResponse.json(
         { error: "Server misconfiguration", detail: err.message },
         { status: 500 }
       );
     }
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[meta/ad-accounts] ${msg}`);
+    console.error(`[meta/bms/refresh] ${msg}`);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -36,26 +52,24 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const metaBmId = req.nextUrl.searchParams.get("bmId");
-  if (!metaBmId) {
-    return NextResponse.json(
-      { error: "bmId query param required" },
-      { status: 400 }
-    );
+  let projectId: string | null = null;
+  try {
+    const body = (await req.json().catch(() => ({}))) as {
+      project_id?: string;
+    };
+    projectId = body.project_id ?? null;
+  } catch {
+    projectId = null;
   }
 
-  const projectId = req.nextUrl.searchParams.get("project_id");
-
-  // Project-aware token resolution: when project_id is provided, use the
-  // connection bound to that project (multi-FB safe). Fall back to user-
-  // global only if no project_id or no binding yet.
   const active = projectId
     ? await getProjectActiveAccessToken(userId, projectId, {
         allowGlobalFallback: true,
       })
     : await getActiveAccessToken(userId);
+
   if (!active) {
-    return NextResponse.json({ connected: false, accounts: [] });
+    return NextResponse.json({ connected: false, bms: [] });
   }
 
   if (active.expiresAt && active.expiresAt.getTime() < Date.now()) {
@@ -65,40 +79,25 @@ async function handle(req: NextRequest) {
       connectionId: active.connectionId,
       eventType: "token_expired",
       status: "failed",
-      message: "Token expired before Ad Account fetch",
+      message: "Token expired before BM refresh",
     });
     return NextResponse.json({
       connected: false,
       expired: true,
-      accounts: [],
+      bms: [],
     });
-  }
-
-  const adminSupabase = getAdminSupabase();
-  const { data: bmRow } = await adminSupabase
-    .from("meta_business_managers")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("meta_bm_id", metaBmId)
-    .maybeSingle();
-
-  if (!bmRow) {
-    return NextResponse.json(
-      { error: "Unknown Business Manager. Refresh BM list first." },
-      { status: 404 }
-    );
   }
 
   try {
-    const accounts = await fetchOwnedAdAccounts(metaBmId, active.token);
+    const bms = await fetchBusinessManagers(active.token);
 
-    await upsertAdAccounts({
+    await upsertBusinessManagers({
       userId,
-      metaBusinessManagerRowId: (bmRow as { id: string }).id,
-      accounts,
+      connectionId: active.connectionId,
+      bms,
     });
 
-    return NextResponse.json({ connected: true, accounts });
+    return NextResponse.json({ connected: true, bms });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     const tokenInvalid =
@@ -112,12 +111,12 @@ async function handle(req: NextRequest) {
         eventType: "token_expired",
         status: "failed",
         message: msg,
-        metadata: { phase: "fetch_ad_accounts", bm: metaBmId },
+        metadata: { phase: "refresh_bms" },
       });
       return NextResponse.json({
         connected: false,
         expired: true,
-        accounts: [],
+        bms: [],
         error: msg,
       });
     }
@@ -128,10 +127,10 @@ async function handle(req: NextRequest) {
       eventType: "error",
       status: "failed",
       message: msg,
-      metadata: { phase: "fetch_ad_accounts", bm: metaBmId },
+      metadata: { phase: "refresh_bms" },
     });
     return NextResponse.json(
-      { connected: true, accounts: [], error: msg },
+      { connected: true, bms: [], error: msg },
       { status: 500 }
     );
   }

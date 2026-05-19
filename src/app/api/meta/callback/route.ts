@@ -4,8 +4,9 @@ import { verifyAndClearOAuthState } from "@/server/meta/oauth-state";
 import { exchangeCodeForLongToken } from "@/server/meta/exchange-code";
 import { fetchMetaUser } from "@/server/meta/fetch-meta-user";
 import { saveConnection } from "@/server/meta/token-store";
-import { META_SCOPES } from "@/server/meta/meta-config";
+import { getMetaScopes } from "@/server/meta/meta-config";
 import { recordConnectionEvent } from "@/server/meta/connection-events";
+import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
 
@@ -53,6 +54,20 @@ function htmlResponse(body: string, status: number = 200): NextResponse {
 }
 
 export async function GET(req: NextRequest) {
+  try {
+    return await handle(req);
+  } catch (err) {
+    if (isMissingEnvError(err)) {
+      console.error(`[meta/callback] ${err.message}`);
+      return htmlResponse(html(false, `Server misconfiguration: ${err.message}`), 500);
+    }
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[meta/callback] ${msg}`);
+    return htmlResponse(html(false, msg), 500);
+  }
+}
+
+async function handle(req: NextRequest) {
   const userId = await getServerUserId();
   if (!userId) {
     return htmlResponse(html(false, "Not authenticated"), 401);
@@ -103,6 +118,7 @@ export async function GET(req: NextRequest) {
   try {
     const { token, expiresAt } = await exchangeCodeForLongToken(code);
     const metaUser = await fetchMetaUser(token);
+    const scope = getMetaScopes().join(",");
 
     const { connectionId, isReconnect } = await saveConnection({
       userId,
@@ -110,7 +126,7 @@ export async function GET(req: NextRequest) {
       metaUserName: metaUser.name,
       accessToken: token,
       expiresAt,
-      scope: META_SCOPES.join(","),
+      scope,
     });
 
     await recordConnectionEvent({
@@ -121,7 +137,7 @@ export async function GET(req: NextRequest) {
       message: `${isReconnect ? "Reconnected" : "Connected"} as ${metaUser.name ?? metaUser.id}`,
       metadata: {
         meta_user_id: metaUser.id,
-        scope: META_SCOPES.join(","),
+        scope,
         token_expires_at: expiresAt?.toISOString() ?? null,
       },
     });

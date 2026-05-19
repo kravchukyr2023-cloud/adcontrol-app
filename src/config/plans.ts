@@ -24,11 +24,14 @@ export type Plan = {
   name: string;
   monthlyPrice: number;
 
-  maxProjects: number;
-  maxBusinessManagersTotal: number;
+  // Per-project SaaS limit model:
+  //  - maxProjectsTotal:              global project count limit for the user
+  //  - maxBusinessManagersPerProject: BMs allowed inside each project
+  //  - maxAdAccountsPerProject:       Ad Accounts allowed inside each project
+  // Resources in one project DO NOT consume the per-project limit of another.
+  maxProjectsTotal: number;
   maxBusinessManagersPerProject: number;
-  maxAdAccountsTotal: number;
-  maxAdAccountsPerBusinessManager: number;
+  maxAdAccountsPerProject: number;
 
   syncMode: "manual" | "auto" | "priority";
   decisionEngineLevel: "basic" | "full" | "advanced" | "premium";
@@ -43,11 +46,9 @@ export const PLANS: Record<PlanId, Plan> = {
     id: "starter",
     name: "Starter",
     monthlyPrice: 0,
-    maxProjects: 1,
-    maxBusinessManagersTotal: 1,
+    maxProjectsTotal: 1,
     maxBusinessManagersPerProject: 1,
-    maxAdAccountsTotal: 1,
-    maxAdAccountsPerBusinessManager: 1,
+    maxAdAccountsPerProject: 1,
     syncMode: "manual",
     decisionEngineLevel: "basic",
     supportLevel: "standard",
@@ -78,11 +79,9 @@ export const PLANS: Record<PlanId, Plan> = {
     id: "operator",
     name: "Operator",
     monthlyPrice: 8.99,
-    maxProjects: 3,
-    maxBusinessManagersTotal: 3,
+    maxProjectsTotal: 3,
     maxBusinessManagersPerProject: 1,
-    maxAdAccountsTotal: 3,
-    maxAdAccountsPerBusinessManager: 1,
+    maxAdAccountsPerProject: 1,
     syncMode: "auto",
     decisionEngineLevel: "full",
     supportLevel: "standard",
@@ -113,11 +112,9 @@ export const PLANS: Record<PlanId, Plan> = {
     id: "team",
     name: "Team",
     monthlyPrice: 18.99,
-    maxProjects: 5,
-    maxBusinessManagersTotal: 10,
+    maxProjectsTotal: 5,
     maxBusinessManagersPerProject: 2,
-    maxAdAccountsTotal: 20,
-    maxAdAccountsPerBusinessManager: 2,
+    maxAdAccountsPerProject: 4,
     syncMode: "priority",
     decisionEngineLevel: "advanced",
     supportLevel: "standard",
@@ -148,11 +145,9 @@ export const PLANS: Record<PlanId, Plan> = {
     id: "scale",
     name: "Scale",
     monthlyPrice: 49.99,
-    maxProjects: 15,
-    maxBusinessManagersTotal: 45,
+    maxProjectsTotal: 15,
     maxBusinessManagersPerProject: 3,
-    maxAdAccountsTotal: 225,
-    maxAdAccountsPerBusinessManager: 5,
+    maxAdAccountsPerProject: 15,
     syncMode: "priority",
     decisionEngineLevel: "premium",
     supportLevel: "priority",

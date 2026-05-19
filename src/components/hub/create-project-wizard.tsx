@@ -23,39 +23,6 @@ const TIMEZONES = [
   "America/New_York",
 ];
 
-const DATA_SOURCES = [
-  {
-    id: "shopify",
-    name: "Shopify",
-    desc: "Sync real orders, revenue and AOV from your store.",
-    icon: "S",
-    iconBg:
-      "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
-  },
-  {
-    id: "sheets",
-    name: "Google Sheets",
-    desc: "Pull orders or attribution from your operational sheet.",
-    icon: "G",
-    iconBg: "bg-blue-500/10 border-blue-500/30 text-blue-300",
-  },
-  {
-    id: "manual",
-    name: "Manual orders",
-    desc: "Add and reconcile orders manually inside AdControl.",
-    icon: "M",
-    iconBg:
-      "bg-amber-500/10 border-amber-500/30 text-amber-300",
-  },
-  {
-    id: "meta",
-    name: "Meta Ads attribution",
-    desc: "Use platform attribution alongside your real revenue.",
-    icon: "f",
-    iconBg: "bg-[#1877F2]/15 border-[#1877F2]/30 text-blue-300",
-  },
-];
-
 const inputCls =
   "w-full h-11 px-3.5 bg-[#050816] border border-[#1B2238] rounded-xl outline-none text-sm text-white focus:border-[#6D5EF8] transition placeholder:text-zinc-600";
 const labelCls =
@@ -168,7 +135,9 @@ export default function CreateProjectWizard({
       reset();
       onClose();
       onCreated();
-      router.push("/dashboard");
+      // Land directly on Data Sources with Meta Ads card highlighted —
+      // each project has its own isolated Meta connection.
+      router.push("/data-sources?focus=meta");
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -189,7 +158,6 @@ export default function CreateProjectWizard({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-3xl bg-[#0B1020] border border-[#1B2238] rounded-3xl flex flex-col max-h-[90vh] overflow-hidden"
       >
-
         <div className="flex items-center justify-between px-7 pt-6 pb-5 border-b border-[#1B2238]">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 mb-1">
@@ -253,7 +221,6 @@ export default function CreateProjectWizard({
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-6">
-
           {step === 0 && (
             <div className="space-y-5">
               <div>
@@ -288,7 +255,9 @@ export default function CreateProjectWizard({
                     className={inputCls}
                   >
                     {CURRENCIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -301,71 +270,11 @@ export default function CreateProjectWizard({
                     className={inputCls}
                   >
                     {TIMEZONES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
                     ))}
                   </select>
-                </div>
-              </div>
-
-              <div className="border border-[#1B2238] rounded-2xl p-5 bg-black/30">
-                <div className="flex items-start gap-4 mb-5">
-                  <div className="w-10 h-10 rounded-xl bg-[#1877F2]/15 border border-[#1877F2]/30 text-blue-300 flex items-center justify-center font-bold shrink-0">
-                    f
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold">
-                        Meta Connection
-                      </h3>
-                      <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-[#1B2238] px-1.5 py-0.5 rounded">
-                        Sprint 3
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                      Connect once — Business Manager and Ad Accounts load automatically. No manual fields.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className={labelCls}>
-                      Connected Facebook user
-                    </label>
-                    <select
-                      disabled
-                      className={inputCls + " opacity-50 cursor-not-allowed"}
-                    >
-                      <option>Not connected</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className={labelCls}>Business Manager</label>
-                    <select
-                      disabled
-                      className={inputCls + " opacity-50 cursor-not-allowed"}
-                    >
-                      <option>Connect Meta to load</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className={labelCls}>Ad Account</label>
-                    <select
-                      disabled
-                      className={inputCls + " opacity-50 cursor-not-allowed"}
-                    >
-                      <option>Connect Meta to load</option>
-                    </select>
-                  </div>
-
-                  <button
-                    disabled
-                    className="text-xs font-medium px-4 py-2 rounded-lg border border-[#1B2238] text-zinc-500 cursor-not-allowed"
-                  >
-                    Connect with Facebook
-                  </button>
                 </div>
               </div>
             </div>
@@ -383,41 +292,8 @@ export default function CreateProjectWizard({
                   className={inputCls}
                 />
                 <p className="text-xs text-zinc-500 mt-2">
-                  Used as the default base URL for the UTM Generator.
-                </p>
-              </div>
-
-              <div className="border border-[#1B2238] rounded-2xl p-5 bg-black/30">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-sm font-semibold">
-                    Default Store URL
-                  </h3>
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-[#1B2238] px-1.5 py-0.5 rounded">
-                    Sprint 3
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed mb-3">
-                  Linked to your sales source. Loads from Shopify or set manually once attribution is connected.
-                </p>
-                <input
-                  disabled
-                  type="text"
-                  placeholder="https://shop.example.com"
-                  className={inputCls + " opacity-50 cursor-not-allowed"}
-                />
-              </div>
-
-              <div className="border border-[#1B2238] rounded-2xl p-5 bg-black/30">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-sm font-semibold">
-                    Attribution Setup
-                  </h3>
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-[#1B2238] px-1.5 py-0.5 rounded">
-                    Sprint 3
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Choose how Meta ROAS is reconciled against real revenue. Available once a sales source is connected.
+                  Used as the default base URL for the UTM Generator and
+                  attribution. You can change this anytime in Settings.
                 </p>
               </div>
             </div>
@@ -491,49 +367,70 @@ export default function CreateProjectWizard({
               </div>
 
               <p className="text-xs text-zinc-500">
-                You can adjust these later in Business Control Center.
+                Adjust these anytime in Settings.
               </p>
             </div>
           )}
 
           {step === 3 && (
-            <div className="space-y-4">
-              <p className="text-sm text-zinc-400">
-                Real integrations arrive in Sprint 3. Cards below preview what will be available.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {DATA_SOURCES.map((ds) => (
-                  <div
-                    key={ds.id}
-                    className="text-left border border-[#1B2238] rounded-2xl p-4 bg-black/20 opacity-80"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-9 h-9 rounded-xl border flex items-center justify-center font-bold shrink-0 ${ds.iconBg}`}
-                      >
-                        {ds.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-white">
-                            {ds.name}
-                          </p>
-                          <span className="text-[10px] uppercase tracking-wider text-zinc-400 border border-[#1B2238] bg-[#050816] px-1.5 py-0.5 rounded">
-                            Coming in Sprint 3
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                          {ds.desc}
-                        </p>
-                      </div>
-                    </div>
+            <div className="space-y-5">
+              <div className="border border-[#1877F2]/30 bg-[#1877F2]/5 rounded-2xl p-5">
+                <div className="flex items-start gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-[#1877F2]/15 border border-[#1877F2]/30 text-blue-300 flex items-center justify-center font-bold shrink-0">
+                    f
                   </div>
-                ))}
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-white">
+                      Next: Connect Meta Ads for {name.trim() || "this project"}
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                      Right after creating, we&apos;ll take you to Data
+                      Sources. There you can connect Meta — pick Business
+                      Manager(s) and the Ad Accounts you want to use for{" "}
+                      <span className="text-white">
+                        {name.trim() || "this project"}
+                      </span>
+                      .
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-[#1B2238] rounded-2xl p-5">
+                <h3 className="text-sm font-semibold text-white mb-3">
+                  Project-scoped Meta integration
+                </h3>
+                <ul className="text-xs text-zinc-400 leading-relaxed space-y-2">
+                  <li>
+                    <span className="text-white">Each project has its own Meta connection.</span>{" "}
+                    BMs and Ad Accounts selected for one project never appear
+                    in another.
+                  </li>
+                  <li>
+                    <span className="text-white">Use different Meta accounts per project</span> —
+                    for example one Facebook user for your store, another for
+                    a client agency project.
+                  </li>
+                  <li>
+                    <span className="text-white">Reuse the same Meta account across projects</span>{" "}
+                    — but with different BMs/AAs per project. Insights are
+                    fetched once per Ad Account and shared via joins.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="border border-[#1B2238] rounded-2xl p-5">
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Other data sources
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Shopify, Google Sheets and manual orders connect from the
+                  same Data Sources page. Each source is configured per
+                  project just like Meta Ads.
+                </p>
               </div>
             </div>
           )}
-
         </div>
 
         {error && (
@@ -572,12 +469,11 @@ export default function CreateProjectWizard({
                 disabled={creating}
                 className="h-11 px-6 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white font-medium text-sm transition disabled:opacity-50"
               >
-                {creating ? "Creating…" : "Create Project"}
+                {creating ? "Creating…" : "Create Project & Continue →"}
               </button>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { requireEnv } from "@/server/env";
 
 let cached: SupabaseClient | null = null;
 
@@ -13,14 +14,8 @@ let cached: SupabaseClient | null = null;
 export function getAdminSupabase(): SupabaseClient {
   if (cached) return cached;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error(
-      "Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL"
-    );
-  }
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const serviceKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
   cached = createClient(url, serviceKey, {
     auth: {

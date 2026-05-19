@@ -95,22 +95,14 @@ export default function UpgradePlanModal({
                 </div>
 
                 <div className="space-y-2 mb-5 text-xs text-zinc-400">
-                  <Row label="Projects" value={plan.maxProjects} />
+                  <Row label="Projects" value={plan.maxProjectsTotal} />
                   <Row
-                    label="BM total"
-                    value={plan.maxBusinessManagersTotal}
-                  />
-                  <Row
-                    label="Ad accounts"
-                    value={plan.maxAdAccountsTotal}
-                  />
-                  <Row
-                    label="BM per project"
+                    label="BMs per project"
                     value={plan.maxBusinessManagersPerProject}
                   />
                   <Row
-                    label="Ad accounts per BM"
-                    value={plan.maxAdAccountsPerBusinessManager}
+                    label="Ad Accounts per project"
+                    value={plan.maxAdAccountsPerProject}
                   />
                   <Row label="Sync" value={plan.syncMode} />
                   <Row

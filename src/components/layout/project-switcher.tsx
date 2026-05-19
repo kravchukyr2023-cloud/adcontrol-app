@@ -86,7 +86,7 @@ export default function ProjectSwitcher() {
 
     const { accessible } = getAccessibleProjects(
       projects,
-      limits.projects
+      limits.projectsTotal
     );
 
     if (accessible.length === 0) {
@@ -102,7 +102,7 @@ export default function ProjectSwitcher() {
     if (!isAccessible) {
       emitActiveProjectChange(accessible[0].id);
     }
-  }, [projects, limits.projects, activeId]);
+  }, [projects, limits.projectsTotal, activeId]);
 
   useEffect(() => {
     if (!open) return;
@@ -183,7 +183,7 @@ export default function ProjectSwitcher() {
 
   const { accessible, locked } = getAccessibleProjects(
     projects,
-    limits.projects
+    limits.projectsTotal
   );
   const accessibleIds = new Set(accessible.map((p) => p.id));
   const active = projects.find((p) => p.id === activeId) ?? null;
@@ -335,7 +335,7 @@ export default function ProjectSwitcher() {
       <ProjectLimitModal
         open={limitOpen}
         plan={plan}
-        currentLimit={limits.projects}
+        currentLimit={limits.projectsTotal}
         onClose={() => setLimitOpen(false)}
       />
 

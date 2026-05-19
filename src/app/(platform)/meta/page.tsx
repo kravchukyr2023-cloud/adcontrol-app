@@ -1,3 +1,10 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useActiveProject } from "@/hooks/use-active-project";
+import { useMetaOverview } from "@/hooks/use-meta-overview";
+
 const FILTERS = ["All", "Active", "Paused", "Learning", "Limited"];
 
 const COLS = [
@@ -17,10 +24,54 @@ const COLS = [
   { key: "actions", label: "", align: "right" as const },
 ];
 
+const ALL = "__all__";
+
 export default function MetaAdsPage() {
+  const { project } = useActiveProject();
+  const overview = useMetaOverview();
+
+  const [selectedBmId, setSelectedBmId] = useState<string>(ALL);
+  const [selectedAaId, setSelectedAaId] = useState<string>(ALL);
+
+  const bmOptions = overview.business_managers;
+
+  // Cascade: when BM filter selected, narrow AA options to that BM only.
+  const aaOptions = useMemo(() => {
+    if (selectedBmId === ALL) {
+      return bmOptions.flatMap((bm) => bm.ad_accounts);
+    }
+    const bm = bmOptions.find((b) => b.id === selectedBmId);
+    return bm?.ad_accounts ?? [];
+  }, [bmOptions, selectedBmId]);
+
+  // Header strip text — reflect filter selection
+  const headerBmLabel =
+    selectedBmId === ALL
+      ? bmOptions.length === 0
+        ? "No business manager"
+        : `${bmOptions.length} business manager${bmOptions.length === 1 ? "" : "s"}`
+      : bmOptions.find((b) => b.id === selectedBmId)?.name ?? "—";
+
+  const headerAaLabel =
+    selectedAaId === ALL
+      ? aaOptions.length === 0
+        ? "No ad accounts"
+        : `${aaOptions.length} ad account${aaOptions.length === 1 ? "" : "s"}`
+      : aaOptions.find((a) => a.id === selectedAaId)?.name ?? "—";
+
+  const hasAnyBinding = bmOptions.some((b) => b.ad_accounts.length > 0);
+  // Empty-state mode:
+  //  - "no_project"  → no active project selected
+  //  - "needs_setup" → project has no Meta connection or no Ad Accounts selected → show CTA
+  //  - "no_sync"     → project is wired but Phase 2 sync hasn't shipped yet
+  const emptyMode: "no_project" | "needs_setup" | "no_sync" = !project
+    ? "no_project"
+    : !hasAnyBinding
+    ? "needs_setup"
+    : "no_sync";
+
   return (
     <div className="space-y-6">
-
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
@@ -56,12 +107,33 @@ export default function MetaAdsPage() {
             />
           </div>
 
-          <select className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]">
-            <option>All Business Managers</option>
+          <select
+            value={selectedBmId}
+            onChange={(e) => {
+              setSelectedBmId(e.target.value);
+              setSelectedAaId(ALL);
+            }}
+            className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]"
+          >
+            <option value={ALL}>All Business Managers</option>
+            {bmOptions.map((bm) => (
+              <option key={bm.id} value={bm.id}>
+                {bm.name ?? bm.meta_bm_id ?? "—"}
+              </option>
+            ))}
           </select>
 
-          <select className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]">
-            <option>All Ad Accounts</option>
+          <select
+            value={selectedAaId}
+            onChange={(e) => setSelectedAaId(e.target.value)}
+            className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]"
+          >
+            <option value={ALL}>All Ad Accounts</option>
+            {aaOptions.map((aa) => (
+              <option key={aa.id} value={aa.id}>
+                {aa.name ?? aa.meta_ad_account_id ?? "—"}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -82,19 +154,14 @@ export default function MetaAdsPage() {
       </div>
 
       <section className="border border-[#1B2238] rounded-2xl bg-[#0B1020] overflow-hidden">
-
         <div className="px-6 py-4 border-b border-[#1B2238] bg-[#181A24] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-[10px] uppercase tracking-wider text-zinc-500">
               BM
             </span>
-            <p className="text-sm font-semibold">
-              No business manager connected
-            </p>
+            <p className="text-sm font-semibold">{headerBmLabel}</p>
             <span className="text-zinc-700">/</span>
-            <span className="text-xs text-zinc-500">
-              No ad account
-            </span>
+            <span className="text-xs text-zinc-500">{headerAaLabel}</span>
           </div>
           <span className="text-xs text-zinc-500">0 campaigns</span>
         </div>
@@ -121,16 +188,55 @@ export default function MetaAdsPage() {
               <tr>
                 <td
                   colSpan={COLS.length}
-                  className="text-center px-6 py-14 text-zinc-500 text-sm"
+                  className="px-6 py-12"
                 >
-                  Connect Meta Ads to load campaigns, ad sets and creatives.
+                  {emptyMode === "no_project" && (
+                    <p className="text-center text-zinc-500 text-sm">
+                      Select a project to load Meta Ads.
+                    </p>
+                  )}
+
+                  {emptyMode === "no_sync" && (
+                    <p className="text-center text-zinc-500 text-sm">
+                      No campaigns synced yet. Sync is shipped in the next
+                      phase.
+                    </p>
+                  )}
+
+                  {emptyMode === "needs_setup" && (
+                    <div className="flex flex-col items-center text-center max-w-md mx-auto gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-[#1877F2]/15 border border-[#1877F2]/30 text-blue-300 flex items-center justify-center font-bold text-lg">
+                        f
+                      </div>
+                      <h3 className="text-base font-semibold text-white">
+                        No Meta Ads data for this project yet
+                      </h3>
+                      <p className="text-sm text-zinc-400 leading-relaxed">
+                        {project?.name ? (
+                          <>
+                            <span className="text-white">{project.name}</span>{" "}
+                            has no Meta connection or no Ad Accounts selected.
+                          </>
+                        ) : (
+                          "This project has no Meta connection or no Ad Accounts selected."
+                        )}{" "}
+                        Open Data Sources to connect Meta and pick the Ad
+                        Accounts you want to track here.
+                      </p>
+                      <Link
+                        href="/data-sources?focus=meta"
+                        className="mt-1 h-10 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition inline-flex items-center justify-center"
+                      >
+                        Open Data Sources →
+                      </Link>
+                    </div>
+                  )}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
-
     </div>
   );
 }

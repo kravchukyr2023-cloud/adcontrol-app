@@ -40,7 +40,7 @@ const INITIAL: Entitlements = {
   subscribedPlan: PLANS.starter,
   addons: EMPTY_ADDON_COUNTS,
   subscribedAddons: EMPTY_ADDON_COUNTS,
-  usage: { projects: 0, businessManagers: 0, adAccounts: 0 },
+  usage: { projects: 0 },
   limits: mergeLimits(PLANS.starter, EMPTY_ADDON_COUNTS),
   subscriptionStatus: "active",
   paymentPaused: false,

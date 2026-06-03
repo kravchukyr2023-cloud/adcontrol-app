@@ -143,10 +143,39 @@ function MetaAdsCard({
   projectName: string | null;
 }) {
   const meta = useProjectMetaConnection(projectId);
-  const overview = useMetaOverview();
+  const overview = useMetaOverview(projectId);
   const { plan, limits } = useEntitlements();
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [addBmOpen, setAddBmOpen] = useState(false);
+
+  // Guard for the auto-open effect below. Tracks whether we already
+  // auto-opened AddBmModal during the current "no_binding_yet" episode.
+  // Reset when status leaves no_binding_yet so a future re-entry (e.g. user
+  // disconnects then reconnects) can auto-open again.
+  const autoOpenedAddBmRef = useRef(false);
+
+  // Auto-open AddBmModal on transition INTO no_binding_yet (the post-OAuth
+  // "we know who you are on Facebook, now pick a BM for this project" moment).
+  //
+  // Protection:
+  //   - Fires only when meta.status transitions to "no_binding_yet" — not on
+  //     every render (gate on `!autoOpenedAddBmRef.current`).
+  //   - After the user closes the modal, ref stays `true` for as long as the
+  //     status remains no_binding_yet → no repeat open on subsequent renders.
+  //   - Ref resets to `false` once status leaves no_binding_yet (becomes
+  //     "connected" after binding, or "no_oauth" after disconnect). A fresh
+  //     OAuth that lands back in no_binding_yet then triggers a new auto-open.
+  useEffect(() => {
+    if (meta.status === "no_binding_yet") {
+      if (autoOpenedAddBmRef.current) return;
+      autoOpenedAddBmRef.current = true;
+      setAddBmOpen(true);
+      return;
+    }
+    if (meta.status === "connected" || meta.status === "no_oauth") {
+      autoOpenedAddBmRef.current = false;
+    }
+  }, [meta.status]);
 
   // Onboarding highlight after fresh project creation (router.push with ?focus=meta).
   // Auto-scrolls the card into view + applies a soft ring for ~6s.
@@ -179,6 +208,9 @@ function MetaAdsCard({
   const isConnected = meta.status === "connected";
   const isExpired = meta.status === "expired";
   const isDisconnected = meta.status === "disconnected";
+  // Global OAuth exists, but this project has no project_meta_business_managers
+  // row yet. UI must offer "pick a BM", NOT "Connect with Facebook".
+  const isNoBindingYet = meta.status === "no_binding_yet";
   const hasAnyBm = overview.business_managers.length > 0;
 
   // Per-project usage for THIS project
@@ -218,6 +250,9 @@ function MetaAdsCard({
     }
     if (isConnected) {
       return { label: "Connected — add BM", cls: statusStyles.warning };
+    }
+    if (isNoBindingYet) {
+      return { label: "Connected — pick BM", cls: statusStyles.warning };
     }
     return { label: "Not connected", cls: statusStyles.placeholder };
   }
@@ -333,13 +368,36 @@ function MetaAdsCard({
         <p className="text-sm text-zinc-500">Loading Meta status…</p>
       )}
 
-      {projectId && meta.status === "none" && (
+      {projectId && meta.status === "no_oauth" && (
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <p className="text-sm text-zinc-400">
             Authorize AdControl to read your Business Managers and owned Ad
             Accounts.
           </p>
           <ConnectMetaButton />
+        </div>
+      )}
+
+      {/*
+        Global OAuth exists, but this project still has no binding. This is
+        the post-OAuth "pick a BM for this project" CTA — it must NOT show
+        Connect-with-Facebook again, because the user is already connected.
+        The button reuses setAddBmOpen → AddBmModal (which lists BMs from
+        the existing user-global connection via /api/meta/bms).
+      */}
+      {projectId && isNoBindingYet && (
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <p className="text-sm text-zinc-400">
+            Facebook is connected. Pick a Business Manager and Ad Accounts
+            for {projectName ? <span className="text-white">{projectName}</span> : "this project"}.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddBmOpen(true)}
+            className="h-11 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition inline-flex items-center justify-center"
+          >
+            Pick Business Manager →
+          </button>
         </div>
       )}
 
@@ -481,6 +539,10 @@ function MetaAdsCard({
           onAdded={() => {
             setAddBmOpen(false);
             overview.refresh();
+            // Tell useProjectMetaConnection to re-query bindings — the new
+            // project_meta_business_managers row transitions status from
+            // "no_binding_yet" to "connected".
+            emitMetaConnectionChanged();
           }}
         />
       )}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useActiveProject } from "./use-active-project";
 import { META_CONNECTION_CHANGED } from "@/lib/meta/events";
 
 export type MetaOverviewConnection = {
@@ -34,7 +33,23 @@ export type MetaOverviewBusinessManager = {
   ad_accounts: MetaOverviewAdAccount[];
 };
 
+/**
+ * Lifecycle status of the overview hook.
+ *
+ *   idle    — projectId is null, fetch has NOT been attempted.
+ *             Consumers MUST NOT treat this as "no data" — it means
+ *             "we don't know yet".
+ *   loading — fetch in flight.
+ *   ready   — fetch completed successfully; business_managers reflects truth.
+ *   error   — fetch failed; error field carries the message.
+ *
+ * `loading: boolean` is preserved as `status === 'loading'` for callers
+ * that don't need the distinction between idle and ready.
+ */
+export type MetaOverviewStatus = "idle" | "loading" | "ready" | "error";
+
 export type MetaOverview = {
+  status: MetaOverviewStatus;
   loading: boolean;
   error: string | null;
   project: { id: string; name: string } | null;
@@ -52,7 +67,8 @@ const INITIAL_CONN: MetaOverviewConnection = {
 };
 
 const INITIAL: Omit<MetaOverview, "refresh"> = {
-  loading: true,
+  status: "idle",
+  loading: false,
   error: null,
   project: null,
   connection: INITIAL_CONN,
@@ -60,10 +76,20 @@ const INITIAL: Omit<MetaOverview, "refresh"> = {
   timezone: null,
 };
 
-export function useMetaOverview(): MetaOverview {
-  const { project } = useActiveProject();
-  const projectId = project?.id ?? null;
-
+/**
+ * Loads /api/meta/overview for the given project.
+ *
+ *   projectId === null  → stays in `status: 'idle'`. Consumers should
+ *                         render their own "no project" placeholder.
+ *
+ * The caller is responsible for sourcing `projectId` from its single
+ * `useActiveProject()` instance. This hook does NOT call `useActiveProject`
+ * itself — that would create a second independent project-fetch race
+ * with the page-level one.
+ */
+export function useMetaOverview(
+  projectId: string | null
+): MetaOverview {
   const [state, setState] = useState<Omit<MetaOverview, "refresh">>(INITIAL);
   const [version, setVersion] = useState(0);
 
@@ -82,11 +108,15 @@ export function useMetaOverview(): MetaOverview {
     let cancelled = false;
     (async () => {
       if (!projectId) {
-        if (!cancelled) setState({ ...INITIAL, loading: false });
+        // No project → stay idle. We have NOT attempted a fetch.
+        // Treating this as `loading:false, business_managers:[]` would
+        // be indistinguishable from a real "user has no BMs" result.
+        if (!cancelled) setState({ ...INITIAL, status: "idle" });
         return;
       }
 
-      if (!cancelled) setState((s) => ({ ...s, loading: true, error: null }));
+      if (!cancelled)
+        setState((s) => ({ ...s, status: "loading", loading: true, error: null }));
 
       try {
         const resp = await fetch(
@@ -98,12 +128,14 @@ export function useMetaOverview(): MetaOverview {
         if (!resp.ok) {
           setState((s) => ({
             ...s,
+            status: "error",
             loading: false,
             error: data.error || "Failed to load overview",
           }));
           return;
         }
         setState({
+          status: "ready",
           loading: false,
           error: null,
           project: data.project ?? null,
@@ -116,7 +148,12 @@ export function useMetaOverview(): MetaOverview {
         if (cancelled) return;
         const msg =
           err instanceof Error ? err.message : "Failed to load overview";
-        setState((s) => ({ ...s, loading: false, error: msg }));
+        setState((s) => ({
+          ...s,
+          status: "error",
+          loading: false,
+          error: msg,
+        }));
       }
     })();
 

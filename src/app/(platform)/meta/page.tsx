@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useActiveProject } from "@/hooks/use-active-project";
 import { useMetaOverview } from "@/hooks/use-meta-overview";
+import {
+  useMetaAnalytics,
+  type AnalyticsCampaign,
+} from "@/hooks/use-meta-analytics";
+import { useMetaSync, type MetaSyncState } from "@/hooks/use-meta-sync";
 
 const FILTERS = ["All", "Active", "Paused", "Learning", "Limited"];
 
@@ -26,16 +31,175 @@ const COLS = [
 
 const ALL = "__all__";
 
+type DatePreset =
+  | "today"
+  | "yesterday"
+  | "last_7_days"
+  | "this_month"
+  | "last_month"
+  | "last_30_days";
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last_7_days", label: "Last 7 days" },
+  { value: "this_month", label: "This month" },
+  { value: "last_month", label: "Last month" },
+  { value: "last_30_days", label: "Last 30 days" },
+];
+
+function toIsoUtcDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function presetToRange(preset: DatePreset): {
+  since: string;
+  until: string;
+} {
+  const now = new Date();
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+
+  switch (preset) {
+    case "today":
+      return { since: toIsoUtcDate(today), until: toIsoUtcDate(today) };
+    case "yesterday": {
+      const y = new Date(today);
+      y.setUTCDate(y.getUTCDate() - 1);
+      return { since: toIsoUtcDate(y), until: toIsoUtcDate(y) };
+    }
+    case "last_7_days": {
+      // Rolling 7-day window inclusive of today.
+      const s = new Date(today);
+      s.setUTCDate(s.getUTCDate() - 6);
+      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
+    }
+    case "this_month": {
+      const s = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+      );
+      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
+    }
+    case "last_month": {
+      const s = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)
+      );
+      // Day 0 of current month = last day of previous month.
+      const e = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)
+      );
+      return { since: toIsoUtcDate(s), until: toIsoUtcDate(e) };
+    }
+    case "last_30_days": {
+      // Rolling 30-day window inclusive of today.
+      const s = new Date(today);
+      s.setUTCDate(s.getUTCDate() - 29);
+      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
+    }
+  }
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  ACTIVE:
+    "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
+  PAUSED:
+    "bg-zinc-500/10 border-zinc-500/30 text-zinc-300",
+  CAMPAIGN_PAUSED:
+    "bg-zinc-500/10 border-zinc-500/30 text-zinc-300",
+  ADSET_PAUSED:
+    "bg-zinc-500/10 border-zinc-500/30 text-zinc-300",
+  IN_PROCESS:
+    "bg-amber-500/10 border-amber-500/30 text-amber-300",
+  WITH_ISSUES:
+    "bg-rose-500/10 border-rose-500/30 text-rose-300",
+};
+
+function statusLabel(effective: string | null): string {
+  if (!effective) return "—";
+  return effective
+    .toLowerCase()
+    .split("_")
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
+function fmtMoney(v: number | null, currency: string): string {
+  if (v === null) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(v);
+  } catch {
+    return `${currency} ${v.toFixed(2)}`;
+  }
+}
+
+function fmtInt(v: number): string {
+  return new Intl.NumberFormat("en-US").format(Math.round(v));
+}
+
+function fmtPct(v: number | null): string {
+  if (v === null) return "—";
+  return `${v.toFixed(2)}%`;
+}
+
+function fmtRoas(v: number | null): string {
+  if (v === null) return "—";
+  return `×${v.toFixed(2)}`;
+}
+
+function fmtTimestamp(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day} ${h}:${mi}`;
+}
+
+const SYNC_PILL: Record<MetaSyncState, string> = {
+  idle: "",
+  syncing:
+    "bg-[#6D5EF8]/10 border-[#6D5EF8]/40 text-[#b2a8ff]",
+  success: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
+  partial: "bg-amber-500/10 border-amber-500/30 text-amber-300",
+  error: "bg-rose-500/10 border-rose-500/30 text-rose-300",
+};
+
+const SYNC_LABEL: Record<MetaSyncState, string> = {
+  idle: "",
+  syncing: "Syncing…",
+  success: "Synced",
+  partial: "Partial sync",
+  error: "Failed",
+};
+
+function cpa(spend: number, purchases: number): number | null {
+  return purchases > 0 ? spend / purchases : null;
+}
+
 export default function MetaAdsPage() {
   const { project } = useActiveProject();
-  const overview = useMetaOverview();
+  // Single source of truth for projectId on this page. All downstream
+  // hooks receive this same value — no duplicate useActiveProject
+  // instance racing the page-level one.
+  const projectId = project?.id ?? null;
+  const overview = useMetaOverview(projectId);
 
   const [selectedBmId, setSelectedBmId] = useState<string>(ALL);
   const [selectedAaId, setSelectedAaId] = useState<string>(ALL);
+  const [datePreset, setDatePreset] = useState<DatePreset>("this_month");
+
+  const dateRange = useMemo(() => presetToRange(datePreset), [datePreset]);
 
   const bmOptions = overview.business_managers;
 
-  // Cascade: when BM filter selected, narrow AA options to that BM only.
   const aaOptions = useMemo(() => {
     if (selectedBmId === ALL) {
       return bmOptions.flatMap((bm) => bm.ad_accounts);
@@ -44,7 +208,40 @@ export default function MetaAdsPage() {
     return bm?.ad_accounts ?? [];
   }, [bmOptions, selectedBmId]);
 
-  // Header strip text — reflect filter selection
+  // Translate the UI's UUID select values into the Meta text ids the
+  // analytics API expects. `null` ⇒ no filter (server returns all selected
+  // project AAs / BMs).
+  const bmFilterText = useMemo(() => {
+    if (selectedBmId === ALL) return null;
+    return (
+      bmOptions.find((b) => b.id === selectedBmId)?.meta_bm_id ?? null
+    );
+  }, [bmOptions, selectedBmId]);
+
+  const aaFilterText = useMemo(() => {
+    if (selectedAaId === ALL) return null;
+    return (
+      aaOptions.find((a) => a.id === selectedAaId)?.meta_ad_account_id ?? null
+    );
+  }, [aaOptions, selectedAaId]);
+
+  const analytics = useMetaAnalytics(projectId, {
+    bmId: bmFilterText,
+    adAccountId: aaFilterText,
+    since: dateRange.since,
+    until: dateRange.until,
+  });
+
+  const sync = useMetaSync(projectId);
+
+  const handleRefresh = async () => {
+    const r = await sync.trigger();
+    // Re-fetch the table/summary if anything actually persisted.
+    if (r.state === "success" || r.state === "partial") {
+      analytics.refresh();
+    }
+  };
+
   const headerBmLabel =
     selectedBmId === ALL
       ? bmOptions.length === 0
@@ -60,15 +257,49 @@ export default function MetaAdsPage() {
       : aaOptions.find((a) => a.id === selectedAaId)?.name ?? "—";
 
   const hasAnyBinding = bmOptions.some((b) => b.ad_accounts.length > 0);
-  // Empty-state mode:
-  //  - "no_project"  → no active project selected
-  //  - "needs_setup" → project has no Meta connection or no Ad Accounts selected → show CTA
-  //  - "no_sync"     → project is wired but Phase 2 sync hasn't shipped yet
-  const emptyMode: "no_project" | "needs_setup" | "no_sync" = !project
+
+  // Display currency: take the first selected AA's currency. Multi-currency
+  // portfolios are rare in V1; mixed cases fall back to "USD" rendering.
+  const displayCurrency = analytics.adAccounts[0]?.currency ?? "USD";
+
+  const campaigns: AnalyticsCampaign[] = analytics.campaigns;
+
+  type ViewMode =
+    | "no_project"
+    | "needs_setup"
+    | "loading"
+    | "error"
+    | "no_data"
+    | "ok";
+
+  // FSM order matters:
+  //   1. no_project — no active project at all
+  //   2. loading    — anything still in flight or not yet started
+  //                   (status idle OR loading on either hook)
+  //   3. error      — explicit fetch failure
+  //   4. needs_setup— ONLY when overview is fully `ready` AND has no BMs.
+  //                   This prevents the flash where overview was still
+  //                   `idle` (because internal useActiveProject was racing)
+  //                   and an empty `business_managers` array got
+  //                   misinterpreted as "user has nothing".
+  //   5. no_data    — analytics ready but no campaigns in the window
+  //   6. ok         — render rows
+  const overviewSettled =
+    overview.status === "ready" || overview.status === "error";
+  const analyticsSettled =
+    analytics.status === "ready" || analytics.status === "error";
+
+  const viewMode: ViewMode = !project
     ? "no_project"
-    : !hasAnyBinding
+    : !overviewSettled || !analyticsSettled
+    ? "loading"
+    : analytics.error
+    ? "error"
+    : overview.status === "ready" && !hasAnyBinding
     ? "needs_setup"
-    : "no_sync";
+    : campaigns.length === 0
+    ? "no_data"
+    : "ok";
 
   return (
     <div className="space-y-6">
@@ -79,8 +310,81 @@ export default function MetaAdsPage() {
           </h1>
           <p className="text-sm text-zinc-400 mt-2">
             Campaigns, ad sets and creatives across your Meta business managers.
+            {analytics.dateRange && (
+              <span className="ml-2 text-zinc-500">
+                · {analytics.dateRange.since} → {analytics.dateRange.until}
+              </span>
+            )}
           </p>
         </div>
+
+        <div className="flex flex-col items-start lg:items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            {sync.state !== "idle" && (
+              <span
+                className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${SYNC_PILL[sync.state]}`}
+                title={sync.message ?? undefined}
+              >
+                {sync.state === "syncing" && (
+                  <span className="w-1.5 h-1.5 mr-1.5 rounded-full bg-[#b2a8ff] animate-pulse" />
+                )}
+                {SYNC_LABEL[sync.state]}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={sync.state === "syncing" || !project}
+              className="h-10 px-4 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] disabled:bg-[#2a2347] disabled:text-zinc-400 disabled:cursor-not-allowed text-white text-sm font-medium transition inline-flex items-center justify-center"
+            >
+              {sync.state === "syncing" ? "Syncing…" : "Refresh Meta Data"}
+            </button>
+          </div>
+          <div className="text-xs text-zinc-500">
+            {analytics.lastSyncedAt
+              ? `Last synced: ${fmtTimestamp(analytics.lastSyncedAt)}`
+              : "Last synced: —"}
+          </div>
+          {sync.state === "partial" && sync.message && (
+            <div className="text-xs text-amber-300/80 max-w-sm text-right">
+              {sync.message}. Showing previously synced data below.
+            </div>
+          )}
+          {sync.state === "error" && sync.message && (
+            <div className="text-xs text-rose-300/80 max-w-sm text-right">
+              {sync.message}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary cards — bound to /api/meta/analytics summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <MetricCard
+          label="Spend"
+          value={fmtMoney(analytics.summary.spend, displayCurrency)}
+        />
+        <MetricCard
+          label="Impressions"
+          value={fmtInt(analytics.summary.impressions)}
+        />
+        <MetricCard
+          label="Clicks"
+          value={fmtInt(analytics.summary.clicks)}
+        />
+        <MetricCard
+          label="Purchases"
+          value={fmtInt(analytics.summary.purchases)}
+        />
+        <MetricCard label="CTR" value={fmtPct(analytics.summary.ctr)} />
+        <MetricCard
+          label="CPC"
+          value={fmtMoney(analytics.summary.cpc, displayCurrency)}
+        />
+        <MetricCard
+          label="CPM"
+          value={fmtMoney(analytics.summary.cpm, displayCurrency)}
+        />
       </div>
 
       <div className="space-y-3">
@@ -135,6 +439,19 @@ export default function MetaAdsPage() {
               </option>
             ))}
           </select>
+
+          <select
+            aria-label="Date range"
+            value={datePreset}
+            onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+            className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]"
+          >
+            {DATE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -163,7 +480,19 @@ export default function MetaAdsPage() {
             <span className="text-zinc-700">/</span>
             <span className="text-xs text-zinc-500">{headerAaLabel}</span>
           </div>
-          <span className="text-xs text-zinc-500">0 campaigns</span>
+          <div className="flex items-center gap-2">
+            {analytics.loading && project && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6D5EF8] animate-pulse" />
+                Loading…
+              </span>
+            )}
+            <span className="text-xs text-zinc-500">
+              {viewMode === "ok"
+                ? `${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"}`
+                : "0 campaigns"}
+            </span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -185,58 +514,149 @@ export default function MetaAdsPage() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td
-                  colSpan={COLS.length}
-                  className="px-6 py-12"
-                >
-                  {emptyMode === "no_project" && (
-                    <p className="text-center text-zinc-500 text-sm">
-                      Select a project to load Meta Ads.
-                    </p>
-                  )}
+              {viewMode === "ok" &&
+                campaigns.map((c) => {
+                  const cpaVal = cpa(c.spend, c.purchases);
+                  const badge =
+                    (c.effective_status && STATUS_BADGE[c.effective_status]) ||
+                    "bg-zinc-500/10 border-zinc-500/30 text-zinc-300";
+                  return (
+                    <tr
+                      key={c.id}
+                      className="border-t border-[#1B2238] hover:bg-white/[0.02] transition"
+                    >
+                      <td className="px-3 py-3 text-left">
+                        <div className="text-white truncate max-w-[280px]">
+                          {c.campaign_name ?? "—"}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 mt-0.5">
+                          {c.meta_campaign_id}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-left">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border ${badge}`}
+                        >
+                          {statusLabel(c.effective_status)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-left text-zinc-300">
+                        {c.objective ?? "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right text-white font-medium">
+                        {fmtMoney(c.spend, displayCurrency)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtInt(c.purchases)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtMoney(cpaVal, displayCurrency)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtInt(c.impressions)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtMoney(c.cpm, displayCurrency)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtInt(c.clicks)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtMoney(c.cpc, displayCurrency)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtPct(c.ctr)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtMoney(c.revenue, displayCurrency)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-zinc-200">
+                        {fmtRoas(c.roas)}
+                      </td>
+                      <td className="px-3 py-3 text-right"></td>
+                    </tr>
+                  );
+                })}
 
-                  {emptyMode === "no_sync" && (
-                    <p className="text-center text-zinc-500 text-sm">
-                      No campaigns synced yet. Sync is shipped in the next
-                      phase.
-                    </p>
-                  )}
-
-                  {emptyMode === "needs_setup" && (
-                    <div className="flex flex-col items-center text-center max-w-md mx-auto gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#1877F2]/15 border border-[#1877F2]/30 text-blue-300 flex items-center justify-center font-bold text-lg">
-                        f
-                      </div>
-                      <h3 className="text-base font-semibold text-white">
-                        No Meta Ads data for this project yet
-                      </h3>
-                      <p className="text-sm text-zinc-400 leading-relaxed">
-                        {project?.name ? (
-                          <>
-                            <span className="text-white">{project.name}</span>{" "}
-                            has no Meta connection or no Ad Accounts selected.
-                          </>
-                        ) : (
-                          "This project has no Meta connection or no Ad Accounts selected."
-                        )}{" "}
-                        Open Data Sources to connect Meta and pick the Ad
-                        Accounts you want to track here.
+              {viewMode !== "ok" && (
+                <tr>
+                  <td colSpan={COLS.length} className="px-6 py-12">
+                    {viewMode === "no_project" && (
+                      <p className="text-center text-zinc-500 text-sm">
+                        Select a project to load Meta Ads.
                       </p>
-                      <Link
-                        href="/data-sources?focus=meta"
-                        className="mt-1 h-10 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition inline-flex items-center justify-center"
-                      >
-                        Open Data Sources →
-                      </Link>
-                    </div>
-                  )}
-                </td>
-              </tr>
+                    )}
+
+                    {viewMode === "loading" && (
+                      <p className="text-center text-zinc-500 text-sm">
+                        Loading campaigns…
+                      </p>
+                    )}
+
+                    {viewMode === "error" && (
+                      <p className="text-center text-rose-400 text-sm">
+                        {analytics.error}
+                      </p>
+                    )}
+
+                    {viewMode === "no_data" && (
+                      <p className="text-center text-zinc-500 text-sm">
+                        No active campaigns with delivery in the selected window.
+                      </p>
+                    )}
+
+                    {viewMode === "needs_setup" && (
+                      <div className="flex flex-col items-center text-center max-w-md mx-auto gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-[#1877F2]/15 border border-[#1877F2]/30 text-blue-300 flex items-center justify-center font-bold text-lg">
+                          f
+                        </div>
+                        <h3 className="text-base font-semibold text-white">
+                          No Meta Ads data for this project yet
+                        </h3>
+                        <p className="text-sm text-zinc-400 leading-relaxed">
+                          {project?.name ? (
+                            <>
+                              <span className="text-white">{project.name}</span>{" "}
+                              has no Meta connection or no Ad Accounts selected.
+                            </>
+                          ) : (
+                            "This project has no Meta connection or no Ad Accounts selected."
+                          )}{" "}
+                          Open Data Sources to connect Meta and pick the Ad
+                          Accounts you want to track here.
+                        </p>
+                        <Link
+                          href="/data-sources?focus=meta"
+                          className="mt-1 h-10 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition inline-flex items-center justify-center"
+                        >
+                          Open Data Sources →
+                        </Link>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="bg-[#0B1020] border border-[#1B2238] rounded-xl px-4 py-3">
+      <div className="text-[9px] uppercase tracking-wider text-zinc-500 mb-1.5">
+        {label}
+      </div>
+      <div className="text-lg font-bold text-white tabular-nums">{value}</div>
     </div>
   );
 }

@@ -67,9 +67,19 @@ export type InsightRecord = {
   reach: number | null;
   frequency: number | null;
 
-  /** Normalized via actions-normalizer (sums known purchase types). */
+  /**
+   * Normalized via actions-normalizer: priority-OR across
+   *   omni_purchase → offsite_conversion.fb_pixel_purchase
+   *   → onsite_web_purchase → purchase
+   * Picks the first present action_type with value > 0. Does NOT sum.
+   */
   purchases: number;
-  /** Normalized via actions-normalizer (sums known lead types). */
+  /**
+   * Normalized via actions-normalizer: priority-OR across
+   *   onsite_conversion.lead_grouped → lead
+   *   → offsite_conversion.fb_pixel_lead → onsite_web_lead
+   * Picks the first present action_type with value > 0. Does NOT sum.
+   */
   leads: number;
   /** Verbatim Meta arrays for raw_actions jsonb storage. */
   raw_actions: {

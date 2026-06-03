@@ -5,7 +5,30 @@ import { supabase } from "@/lib/supabase/client";
 import { META_CONNECTION_CHANGED } from "@/lib/meta/events";
 
 export type ProjectMetaConnectionState = {
-  status: "loading" | "connected" | "disconnected" | "expired" | "none";
+  /**
+   * Project-scoped Meta connection state.
+   *
+   *   loading         — fetch in flight
+   *   no_oauth        — user has NO active Meta OAuth anywhere
+   *   no_binding_yet  — user has an active global Meta connection but this
+   *                     project has no project_meta_business_managers row.
+   *                     UI must offer "pick a BM for this project", NOT
+   *                     "Connect with Facebook".
+   *   connected       — active binding + active connection + token valid
+   *   disconnected    — has binding, but underlying connection is disconnected
+   *   expired         — has binding, but underlying connection token expired
+   *
+   * The split between `no_oauth` and `no_binding_yet` removes the previous
+   * `none` catch-all that hid the post-OAuth "needs binding" state behind
+   * the same UI as "user never connected".
+   */
+  status:
+    | "loading"
+    | "no_oauth"
+    | "no_binding_yet"
+    | "connected"
+    | "disconnected"
+    | "expired";
   connectionId: string | null;
   metaUserName: string | null;
   metaUserId: string | null;
@@ -56,9 +79,9 @@ export function useProjectMetaConnection(
 
     (async () => {
       if (!projectId) {
-        // Allow async tick so the lint rule doesn't flag a sync setState in
-        // effect body. Result is the same: state goes to 'none' immediately.
-        if (!cancelled) setState({ ...INITIAL, status: "none" });
+        // No active project — collapse to "no_oauth". Parent UI handles the
+        // "select a project" prompt above this hook's branches anyway.
+        if (!cancelled) setState({ ...INITIAL, status: "no_oauth" });
         return;
       }
       // 1. Resolve the connection_id this project is bound to via any
@@ -79,9 +102,24 @@ export function useProjectMetaConnection(
           ?.meta_connection_id ?? null;
 
       if (!connectionId) {
-        // Project has no Meta wiring yet. Status='none' — parent UI shows
-        // "Connect Meta" prompt. Other projects' connections do not leak here.
-        setState({ ...INITIAL, status: "none" });
+        // No binding to this project. Distinguish "user never OAuth'd"
+        // from "user has a global connection, just not bound here".
+        // Single small SELECT — RLS auto-scopes to current user, returns
+        // at most one row with one column. Cold-path only.
+        const globalRes = await supabase
+          .from("meta_connections")
+          .select("id")
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        const hasGlobalConnection = !!(globalRes.data as { id: string } | null);
+        setState({
+          ...INITIAL,
+          status: hasGlobalConnection ? "no_binding_yet" : "no_oauth",
+        });
         return;
       }
 

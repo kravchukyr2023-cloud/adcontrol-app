@@ -83,6 +83,39 @@ export const PAGINATION_TIMEOUT_PER_PAGE_MS = 8_000;
 export const MAX_INSIGHT_ROWS_PER_REQUEST = 500;
 
 /**
+ * Total fetch attempts per single page (1 initial + N-1 retries).
+ * With MAX_RETRY_ATTEMPTS=3 we tolerate up to 2 transient blips per page
+ * before declaring the scope failed. This is the retry knob mentioned in
+ * audit issue #7 (Meta sometimes returns 5xx or transient error codes
+ * for ~1-2s; without retry a single blip kills the entire scope).
+ */
+export const MAX_RETRY_ATTEMPTS = 3;
+
+/**
+ * Base for exponential backoff between retries. Wait between attempts
+ * is `RETRY_BACKOFF_BASE_MS * 2^(attempt-1)`:
+ *   attempt 1 → 2:  1000 ms
+ *   attempt 2 → 3:  2000 ms
+ * Total worst case before giving up on a single page: 3 fetch attempts
+ * + 3 seconds of sleep, ~well under PAGINATION_TIMEOUT_PER_PAGE_MS budget.
+ */
+export const RETRY_BACKOFF_BASE_MS = 1000;
+
+/**
+ * Per-AA floor for the parallel multi-AA sync runtime budget.
+ *
+ * In parallel mode (sync-project.ts), each AA gets a slice of the
+ * orchestrator's soft deadline: `(MAX_SYNC_RUNTIME_MS * 0.85) / aaCount`.
+ * For users with many AAs the slice would shrink to seconds — at some
+ * point too small for any meaningful sync (a single Meta page fetch
+ * already takes ~1-3s). The floor guarantees each AA at least 5s of
+ * actual work, even if that means the total wall-clock exceeds the
+ * project budget on very large portfolios. Better to sync some AAs
+ * properly than all of them not at all.
+ */
+export const MIN_PER_AA_RUNTIME_MS = 5_000;
+
+/**
  * effective_status values allowed in /campaigns, /adsets, /ads queries.
  *
  * Meta Graph entity endpoints do not support querying deleted/archived

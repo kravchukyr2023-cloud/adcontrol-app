@@ -2,6 +2,10 @@ import "server-only";
 import { getAdminSupabase } from "./admin-supabase";
 import { getAccessTokenForConnection } from "./token-store";
 import { syncAdAccount, type SyncAdAccountResult } from "./sync-orchestrator";
+import {
+  MAX_SYNC_RUNTIME_MS,
+  MIN_PER_AA_RUNTIME_MS,
+} from "./sync-constants";
 import { debugLog, debugWarn } from "./sync-debug";
 
 /**
@@ -176,66 +180,103 @@ export async function syncProject(params: {
     };
   }
 
-  const results: AaSyncResult[] = [];
+  // Per-AA runtime budget: slice the project-level soft deadline equally
+  // across AAs. Floor at MIN_PER_AA_RUNTIME_MS so users with many AAs
+  // still get meaningful sync per cabinet (better some AAs done well
+  // than all done badly). Soft-deadline ratio kept consistent with
+  // orchestrator's SOFT_DEADLINE_RATIO (0.85).
+  const perAaBudget = Math.max(
+    MIN_PER_AA_RUNTIME_MS,
+    Math.floor((MAX_SYNC_RUNTIME_MS * 0.85) / Math.max(1, accounts.length))
+  );
+  debugLog(
+    `[meta/sync] parallel multi-AA: count=${accounts.length} per_aa_budget=${perAaBudget}ms`
+  );
 
-  // Token cache per connection — avoid re-loading for multiple AAs on same BM.
-  const tokenCache = new Map<string, string | null>();
-
-  for (const aa of accounts) {
-    debugLog(`[meta/sync] sync AA start ${aa.meta_ad_account_id_text}`);
-
-    let token = tokenCache.get(aa.meta_connection_id);
-    if (token === undefined) {
-      debugLog(
-        `[meta/sync] loading token for connection ${aa.meta_connection_id}`
+  // Token-promise cache: dedupes concurrent token loads. If 5 AAs share
+  // one BM connection, we load the token once and 5 parallel awaits
+  // resolve from the same Promise — no 5x DB hits, no race conditions.
+  const tokenPromiseCache = new Map<string, Promise<string | null>>();
+  const tokenFor = (connId: string): Promise<string | null> => {
+    let p = tokenPromiseCache.get(connId);
+    if (!p) {
+      debugLog(`[meta/sync] loading token for connection ${connId}`);
+      p = getAccessTokenForConnection(params.userId, connId).then(
+        (r) => r?.token ?? null
       );
-      const tk = await getAccessTokenForConnection(
-        params.userId,
-        aa.meta_connection_id
-      );
-      token = tk?.token ?? null;
-      tokenCache.set(aa.meta_connection_id, token);
-      debugLog(`[meta/sync] token loaded present=${token ? "yes" : "no"}`);
+      tokenPromiseCache.set(connId, p);
     }
+    return p;
+  };
 
-    if (!token) {
-      debugWarn(
-        `[meta/sync] no active token for AA ${aa.meta_ad_account_id_text} — skipping`
+  // Spawn one task per AA. allSettled guarantees one rejected promise
+  // can't sink its siblings. Result-array order matches `accounts` order.
+  const settled = await Promise.allSettled(
+    accounts.map(async (aa): Promise<AaSyncResult> => {
+      debugLog(`[meta/sync] sync AA start ${aa.meta_ad_account_id_text}`);
+
+      const token = await tokenFor(aa.meta_connection_id);
+
+      if (!token) {
+        debugWarn(
+          `[meta/sync] no active token for AA ${aa.meta_ad_account_id_text} — skipping`
+        );
+        return {
+          metaAdAccountId: aa.meta_ad_account_id_text,
+          adAccountName: aa.ad_account_name,
+          result: {
+            acquired: false,
+            lockReason: "no_active_token",
+            errorMessage:
+              "Connection has no active token (disconnected or expired).",
+          },
+        };
+      }
+
+      const syncResult = await syncAdAccount({
+        userId: params.userId,
+        metaAdAccountIdText: aa.meta_ad_account_id_text,
+        metaAdAccountIdFk: aa.id,
+        currency: aa.currency,
+        accessToken: token,
+        isManual: params.isManual,
+        runtimeBudgetMs: perAaBudget,
+      });
+
+      debugLog(
+        `[meta/sync] sync AA done ${aa.meta_ad_account_id_text} acquired=${syncResult.acquired} status=${
+          syncResult.finalStatus ?? "n/a"
+        } duration=${syncResult.durationMs ?? 0}ms`
       );
-      results.push({
+
+      return {
         metaAdAccountId: aa.meta_ad_account_id_text,
         adAccountName: aa.ad_account_name,
-        result: {
-          acquired: false,
-          lockReason: "no_active_token",
-          errorMessage:
-            "Connection has no active token (disconnected or expired).",
-        },
-      });
-      continue;
-    }
+        result: syncResult,
+      };
+    })
+  );
 
-    const syncResult = await syncAdAccount({
-      userId: params.userId,
-      metaAdAccountIdText: aa.meta_ad_account_id_text,
-      metaAdAccountIdFk: aa.id,
-      currency: aa.currency,
-      accessToken: token,
-      isManual: params.isManual,
-    });
-
-    debugLog(
-      `[meta/sync] sync AA done ${aa.meta_ad_account_id_text} acquired=${syncResult.acquired} status=${
-        syncResult.finalStatus ?? "n/a"
-      } duration=${syncResult.durationMs ?? 0}ms`
+  // Preserve input order. Rejections (unexpected exceptions outside
+  // syncAdAccount's own try/catch — e.g. token-store crash) are mapped
+  // to a synthetic acquired:false result so the caller sees a uniform
+  // shape across the array.
+  const results: AaSyncResult[] = settled.map((s, idx) => {
+    if (s.status === "fulfilled") return s.value;
+    const aa = accounts[idx];
+    const msg = s.reason instanceof Error ? s.reason.message : String(s.reason);
+    console.error(
+      `[meta/sync] AA ${aa.meta_ad_account_id_text} promise rejected: ${msg}`
     );
-
-    results.push({
+    return {
       metaAdAccountId: aa.meta_ad_account_id_text,
       adAccountName: aa.ad_account_name,
-      result: syncResult,
-    });
-  }
+      result: {
+        acquired: false,
+        errorMessage: `Unexpected sync failure: ${msg}`,
+      },
+    };
+  });
 
   const hasError = results.some(
     (r) =>

@@ -86,6 +86,12 @@ type SyncParams = {
   accessToken: string;
   /** True for user-triggered syncs (button click). Sets last_manual_sync_at. */
   isManual?: boolean;
+  /**
+   * Optional per-AA runtime budget in ms. Used by sync-project.ts to
+   * slice the project-level soft deadline across parallel AAs. Defaults
+   * to MAX_SYNC_RUNTIME_MS when omitted (single-AA path / manual button).
+   */
+  runtimeBudgetMs?: number;
 };
 
 const HARD_TIMEOUT_RATIO = 1.0;
@@ -229,13 +235,18 @@ export async function syncAdAccount(
   );
 
   const startMs = Date.now();
-  const hardDeadline = startMs + Math.floor(MAX_SYNC_RUNTIME_MS * HARD_TIMEOUT_RATIO);
-  const softDeadline = startMs + Math.floor(MAX_SYNC_RUNTIME_MS * SOFT_DEADLINE_RATIO);
+  // Effective runtime budget for this AA — falls back to the global
+  // MAX_SYNC_RUNTIME_MS when caller (manual button / single-AA path)
+  // doesn't slice. sync-project.ts passes a smaller value in parallel
+  // multi-AA mode so each AA gets a fair share of the project budget.
+  const runtimeBudget = params.runtimeBudgetMs ?? MAX_SYNC_RUNTIME_MS;
+  const hardDeadline = startMs + Math.floor(runtimeBudget * HARD_TIMEOUT_RATIO);
+  const softDeadline = startMs + Math.floor(runtimeBudget * SOFT_DEADLINE_RATIO);
 
   const controller = new AbortController();
   const hardTimeout = setTimeout(
     () => controller.abort(new Error("sync hard timeout")),
-    MAX_SYNC_RUNTIME_MS
+    runtimeBudget
   );
 
   const scopes: ScopeResult[] = [];

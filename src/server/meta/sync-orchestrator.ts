@@ -6,8 +6,11 @@ import {
   type ReleaseStatus,
 } from "./lock-management";
 import {
+  ATTRIBUTION_BUFFER_DAYS,
   FIRST_SYNC_DAYS,
+  MAX_SYNC_DAYS,
   MAX_SYNC_RUNTIME_MS,
+  MIN_SYNC_DAYS,
   RESYNC_DAYS,
 } from "./sync-constants";
 import { fetchCampaigns } from "./fetch-campaigns";
@@ -92,19 +95,69 @@ function toIsoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Compute the date window to pull insights for, dynamically adapting to
+ * how long ago the previous successful sync ran.
+ *
+ * Architecture problem this solves (audit issue #2):
+ *   Previously this was `days = lastSync ? RESYNC_DAYS : FIRST_SYNC_DAYS`.
+ *   That meant a user who returned after 14 days got a fixed 7-day re-sync
+ *   — days [today-14 .. today-7] were never fetched again and Meta would
+ *   not retroactively serve them on future syncs either. Permanent gaps.
+ *
+ * Dynamic formula:
+ *   No prior sync          → FIRST_SYNC_DAYS   (30)
+ *   Prior sync available   → max(RESYNC_DAYS, daysSinceLastSync + ATTRIBUTION_BUFFER_DAYS)
+ *   Then clamp result into [MIN_SYNC_DAYS, MAX_SYNC_DAYS]
+ *
+ * Edge cases handled:
+ *   - lastSuccessfulSyncAt in the future (clock skew / manual DB edit):
+ *       `daysSinceLastSync` is floored at 0 — we never compute negative
+ *       windows or skip ahead.
+ *   - lastSuccessfulSyncAt is today (daysSinceLastSync = 0):
+ *       formula yields max(7, 0+2) = 7. Pulls the routine 7-day window.
+ *   - lastSuccessfulSyncAt is unparseable string:
+ *       falls back to FIRST_SYNC_DAYS as if no prior sync existed.
+ *   - User returns after 95 days:
+ *       proposed = 97 → clamped to MAX_SYNC_DAYS (90). Safety ceiling
+ *       prevents runtime-budget blowouts.
+ */
 function computeWindow(lastSuccessfulSyncAt: string | null): {
   since: string;
   until: string;
   days: number;
+  daysSinceLastSync: number | null;
 } {
   const today = new Date();
-  const days = lastSuccessfulSyncAt ? RESYNC_DAYS : FIRST_SYNC_DAYS;
+
+  let daysSinceLastSync: number | null = null;
+  if (lastSuccessfulSyncAt) {
+    const parsed = new Date(lastSuccessfulSyncAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      const rawDiffMs = today.getTime() - parsed.getTime();
+      // Clamp negative diffs (future timestamps) to 0 — defensive.
+      daysSinceLastSync = Math.max(
+        0,
+        Math.floor(rawDiffMs / (1000 * 60 * 60 * 24))
+      );
+    }
+  }
+
+  const proposed =
+    daysSinceLastSync === null
+      ? FIRST_SYNC_DAYS
+      : Math.max(RESYNC_DAYS, daysSinceLastSync + ATTRIBUTION_BUFFER_DAYS);
+
+  const days = Math.min(MAX_SYNC_DAYS, Math.max(MIN_SYNC_DAYS, proposed));
+
   const since = new Date(today);
   since.setUTCDate(since.getUTCDate() - days);
+
   return {
     since: toIsoDate(since),
     until: toIsoDate(today),
     days,
+    daysSinceLastSync,
   };
 }
 
@@ -186,7 +239,14 @@ export async function syncAdAccount(
   );
 
   const scopes: ScopeResult[] = [];
-  const { since, until } = computeWindow(lock.lastSuccessfulSyncAt);
+  const windowDecision = computeWindow(lock.lastSuccessfulSyncAt);
+  debugLog(
+    `[sync] window = ${windowDecision.days} days (lastSync = ${
+      lock.lastSuccessfulSyncAt ?? "—"
+    }, daysSinceLastSync = ${windowDecision.daysSinceLastSync ?? "—"}) ` +
+      `since=${windowDecision.since} until=${windowDecision.until}`
+  );
+  const { since, until } = windowDecision;
 
   const shouldStop = () => Date.now() >= softDeadline;
 

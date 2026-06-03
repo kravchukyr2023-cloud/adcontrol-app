@@ -40,6 +40,31 @@ export const FIRST_SYNC_DAYS = 30;
 export const RESYNC_DAYS = 7;
 
 /**
+ * Extra days added on top of `daysSinceLastSync` when computing the
+ * dynamic re-sync window. Meta can retroactively backfill attribution
+ * (purchases / leads) up to ~48 hours after the event — without this
+ * buffer, a sync done 1 day after the previous one would miss late
+ * attribution for the day just before. Two days is a safe minimum.
+ */
+export const ATTRIBUTION_BUFFER_DAYS = 2;
+
+/**
+ * Lower bound for the dynamic re-sync window. Even if the user just
+ * synced an hour ago, we still pull at least RESYNC_DAYS so late
+ * attribution within Meta's standard back-fill window stays covered.
+ */
+export const MIN_SYNC_DAYS = RESYNC_DAYS;
+
+/**
+ * Upper bound for the dynamic re-sync window. Protects against pulling
+ * the entire account history if the user comes back after a months-long
+ * pause (a 365-day window would blow the orchestrator's runtime budget
+ * and Meta's per-request limits). 90 days is a pragmatic ceiling that
+ * still covers a normal quarterly cadence.
+ */
+export const MAX_SYNC_DAYS = 90;
+
+/**
  * Heartbeat-based stale lock detection threshold. Live syncs refresh
  * meta_sync_states.heartbeat_at every page/scope boundary (~1-3s). A
  * lock without heartbeat update in this window is considered orphan

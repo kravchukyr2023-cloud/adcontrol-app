@@ -7,6 +7,10 @@ import {
   MIN_PER_AA_RUNTIME_MS,
 } from "./sync-constants";
 import { debugLog, debugWarn } from "./sync-debug";
+import {
+  refreshTokenIfNeeded,
+  type RefreshResult,
+} from "./token-rotation";
 
 /**
  * Per-project sync runner.
@@ -193,9 +197,29 @@ export async function syncProject(params: {
     `[meta/sync] parallel multi-AA: count=${accounts.length} per_aa_budget=${perAaBudget}ms`
   );
 
+  // Token-rotation cache: ONE refresh attempt per unique connection per
+  // project sync call. Without this dedup, 5 AAs sharing one connection
+  // would each fire fb_exchange_token in parallel — race conditions in
+  // the DB write and 5× the Meta API load. The cache resolves all 5
+  // awaits from the same Promise.
+  const refreshPromiseCache = new Map<string, Promise<RefreshResult>>();
+  const refreshFor = (connId: string): Promise<RefreshResult> => {
+    let p = refreshPromiseCache.get(connId);
+    if (!p) {
+      p = refreshTokenIfNeeded(connId);
+      refreshPromiseCache.set(connId, p);
+    }
+    return p;
+  };
+
   // Token-promise cache: dedupes concurrent token loads. If 5 AAs share
   // one BM connection, we load the token once and 5 parallel awaits
   // resolve from the same Promise — no 5x DB hits, no race conditions.
+  //
+  // IMPORTANT: This cache must be populated AFTER refreshFor() resolves
+  // for the same connection, so the load picks up a rotated token if
+  // rotation happened. We achieve this by awaiting refreshFor() inside
+  // each task BEFORE calling tokenFor().
   const tokenPromiseCache = new Map<string, Promise<string | null>>();
   const tokenFor = (connId: string): Promise<string | null> => {
     let p = tokenPromiseCache.get(connId);
@@ -214,6 +238,30 @@ export async function syncProject(params: {
   const settled = await Promise.allSettled(
     accounts.map(async (aa): Promise<AaSyncResult> => {
       debugLog(`[meta/sync] sync AA start ${aa.meta_ad_account_id_text}`);
+
+      // Refresh-or-skip gate. refreshFor() is deduped per connection,
+      // so for N AAs on the same BM we hit Meta at most once.
+      const refresh = await refreshFor(aa.meta_connection_id);
+      if (
+        !refresh.ok &&
+        (refresh.reason === "rotation_failed" ||
+          refresh.reason === "no_connection")
+      ) {
+        debugWarn(
+          `[meta/sync] token rotation failed for AA ${aa.meta_ad_account_id_text} (${refresh.reason}) — skipping`
+        );
+        return {
+          metaAdAccountId: aa.meta_ad_account_id_text,
+          adAccountName: aa.ad_account_name,
+          result: {
+            acquired: false,
+            lockReason: "token_expired",
+            errorMessage:
+              "Token expired and could not be refreshed. User must reconnect Meta.",
+          },
+        };
+      }
+      // refresh.reason === 'transient_failure' or { ok: true } → proceed.
 
       const token = await tokenFor(aa.meta_connection_id);
 
@@ -239,6 +287,7 @@ export async function syncProject(params: {
         metaAdAccountIdFk: aa.id,
         currency: aa.currency,
         accessToken: token,
+        metaConnectionId: aa.meta_connection_id,
         isManual: params.isManual,
         runtimeBudgetMs: perAaBudget,
       });

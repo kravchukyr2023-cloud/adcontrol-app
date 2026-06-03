@@ -27,6 +27,8 @@ import { upsertAdInsights } from "./upsert-ad-insights";
 import type { AbortReason } from "./sync-fetch-helpers";
 import type { UpsertResult } from "./upsert-helpers";
 import { debugLog, debugWarn } from "./sync-debug";
+import { refreshTokenIfNeeded } from "./token-rotation";
+import { getAccessTokenForConnection } from "./token-store";
 
 /**
  * P2.4C — sync orchestration (per ad account).
@@ -84,6 +86,14 @@ type SyncParams = {
   currency: string | null;
   /** OAuth access token for the connection that owns this AA. */
   accessToken: string;
+  /**
+   * UUID of meta_connections row that holds the OAuth token. Used by the
+   * orchestrator to invoke automatic token rotation before any Meta API
+   * call. sync-project.ts is the primary site of rotation (deduplicated
+   * per connection); the per-AA call here is a defence-in-depth check
+   * that becomes a cheap no-op when the project layer already rotated.
+   */
+  metaConnectionId: string;
   /** True for user-triggered syncs (button click). Sets last_manual_sync_at. */
   isManual?: boolean;
   /**
@@ -234,6 +244,61 @@ export async function syncAdAccount(
     `[meta/sync] lock acquired AA=${params.metaAdAccountIdText} recovered=${lock.recovered}`
   );
 
+  // Token rotation check — must happen BEFORE any Meta API call. If the
+  // long token is within 7 days of expiry we rotate in-place; if Meta
+  // refuses to rotate we mark the connection expired and bail this sync.
+  //
+  // In the multi-AA project path, sync-project.ts performs the same
+  // refresh deduplicated per connection BEFORE calling us — so this
+  // check usually evaluates to `still_valid` (cheap). Kept here as
+  // defence-in-depth: any future direct caller of syncAdAccount remains
+  // protected from the silent-token-death failure mode.
+  let effectiveToken = params.accessToken;
+  const refresh = await refreshTokenIfNeeded(params.metaConnectionId);
+  if (
+    !refresh.ok &&
+    (refresh.reason === "rotation_failed" ||
+      refresh.reason === "no_connection")
+  ) {
+    debugWarn(
+      `[meta/sync] aborting AA=${params.metaAdAccountIdText} — token rotation failed (${refresh.reason})`
+    );
+    // Release the lock cleanly with status='error' so subsequent UI
+    // surfaces last_error rather than a stale 'syncing' state.
+    await releaseLock({
+      key: lockKey,
+      finalStatus: "error",
+      errorMessage: `Token expired and could not be refreshed (${refresh.reason}). User must reconnect Meta.`,
+      isManual: params.isManual,
+    });
+    return {
+      acquired: false,
+      lockReason: "token_expired",
+      errorMessage:
+        "Token expired and could not be refreshed. User must reconnect.",
+    };
+  }
+  if (refresh.ok && refresh.reason === "rotated") {
+    // Re-read the freshly-written token so the rest of this sync uses
+    // the new long-lived value (the one passed in via params is now
+    // stale but technically still usable for a brief window).
+    const fresh = await getAccessTokenForConnection(
+      params.userId,
+      params.metaConnectionId
+    );
+    if (fresh?.token) {
+      effectiveToken = fresh.token;
+      debugLog(
+        `[meta/sync] using rotated token AA=${params.metaAdAccountIdText}`
+      );
+    }
+    // If reload somehow failed, fall back to params.accessToken — the
+    // old token is still technically valid (rotation succeeded with it).
+  }
+  // refresh.reason === 'transient_failure' or 'still_valid' → proceed
+  // with params.accessToken; sync-fetch-helpers.ts retry/backoff layer
+  // (Stage 4) will handle any subsequent Meta call hiccups.
+
   const startMs = Date.now();
   // Effective runtime budget for this AA — falls back to the global
   // MAX_SYNC_RUNTIME_MS when caller (manual button / single-AA path)
@@ -292,7 +357,7 @@ export async function syncAdAccount(
     {
       logScopeStart("campaigns");
       const r = await fetchCampaigns({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         signal: controller.signal,
         deadline: softDeadline,
@@ -331,7 +396,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("adsets");
       const r = await fetchAdsets({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         signal: controller.signal,
         deadline: softDeadline,
@@ -364,7 +429,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("ads");
       const r = await fetchAds({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         signal: controller.signal,
         deadline: softDeadline,
@@ -397,7 +462,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("account_insights");
       const r = await fetchInsights({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         level: "account",
         since,
@@ -436,7 +501,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("campaign_insights");
       const r = await fetchInsights({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         level: "campaign",
         since,
@@ -473,7 +538,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("adset_insights");
       const r = await fetchInsights({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         level: "adset",
         since,
@@ -510,7 +575,7 @@ export async function syncAdAccount(
     } else {
       logScopeStart("ad_insights");
       const r = await fetchInsights({
-        token: params.accessToken,
+        token: effectiveToken,
         metaAdAccountId: params.metaAdAccountIdText,
         level: "ad",
         since,

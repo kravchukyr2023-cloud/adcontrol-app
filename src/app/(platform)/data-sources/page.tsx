@@ -402,11 +402,16 @@ function MetaAdsCard({
       )}
 
       {projectId && (isExpired || isDisconnected) && (
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <p className="text-sm text-zinc-400">
-            {isExpired
-              ? "Meta token expired. Reconnect to restore access."
-              : "Meta disconnected. Reconnect to resume."}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-rose-500/30 bg-rose-500/5 rounded-xl px-4 py-3">
+          <p className="text-sm text-rose-200/90">
+            {isExpired ? (
+              <>
+                Your Facebook connection expired and automatic refresh failed.
+                Reconnect with Facebook to restore Meta Ads sync.
+              </>
+            ) : (
+              "Meta disconnected. Reconnect to resume."
+            )}
           </p>
           <ConnectMetaButton label="Reconnect Meta" />
         </div>

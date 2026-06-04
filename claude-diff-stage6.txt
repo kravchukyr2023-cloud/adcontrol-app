@@ -1,0 +1,172 @@
+diff --git a/src/app/api/cron/sync-all/route.ts b/src/app/api/cron/sync-all/route.ts
+new file mode 100644
+index 0000000..d472da9
+--- /dev/null
++++ b/src/app/api/cron/sync-all/route.ts
+@@ -0,0 +1,155 @@
++import { NextRequest, NextResponse } from "next/server";
++import { getAdminSupabase } from "@/server/meta/admin-supabase";
++import { syncProject } from "@/server/meta/sync-project";
++
++export const runtime = "nodejs";
++export const maxDuration = 60;
++
++/**
++ * GET /api/cron/sync-all
++ *
++ * Vercel Cron entry point. Iterates every user with an active Meta
++ * connection and runs syncProject() for each of their projects.
++ *
++ * Auth: shared-secret bearer in the Authorization header. The check
++ * runs FIRST — before any SQL — so an unauthenticated probe never
++ * reaches the database.
++ *
++ * Failure isolation: per-user try/catch + per-project try/catch.
++ * One user's broken connection or one syncProject exception must
++ * not stop the rest of the run.
++ *
++ * Response shape is intentionally aggregate-only: counts + duration.
++ * No tokens, secrets, or per-AA payloads are returned — the response
++ * may be visible in Vercel's cron-run UI / logs.
++ *
++ * Hobby-tier note: vercel.json schedules this daily at 06:00 UTC
++ * (Hobby is capped at 1 cron/day). Moving to Pro is a vercel.json
++ * change only — this handler is already idempotent and budgeted
++ * for the 60s function ceiling.
++ */
++export async function GET(req: NextRequest) {
++  const cronSecret = process.env.CRON_SECRET;
++  if (!cronSecret) {
++    console.error("[cron] CRON_SECRET env not set — refusing to run");
++    return NextResponse.json(
++      { error: "Server misconfiguration" },
++      { status: 500 }
++    );
++  }
++
++  const authHeader = req.headers.get("authorization");
++  if (authHeader !== `Bearer ${cronSecret}`) {
++    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
++  }
++
++  const startMs = Date.now();
++  const sb = getAdminSupabase();
++
++  const { data: connRows, error: connErr } = await sb
++    .from("meta_connections")
++    .select("user_id")
++    .eq("status", "active");
++
++  if (connErr) {
++    console.error(`[cron] connection lookup failed: ${connErr.message}`);
++    return NextResponse.json(
++      { error: "DB error loading connections" },
++      { status: 500 }
++    );
++  }
++
++  const userIds = Array.from(
++    new Set(
++      ((connRows ?? []) as Array<{ user_id: string }>).map((r) => r.user_id)
++    )
++  );
++
++  let totalProjects = 0;
++  let successCount = 0;
++  let failedCount = 0;
++
++  for (const userId of userIds) {
++    try {
++      const { data: projRows, error: projErr } = await sb
++        .from("projects")
++        .select("id")
++        .eq("user_id", userId);
++
++      if (projErr) {
++        console.error(
++          `[cron] user ${userId} project lookup failed: ${projErr.message}`
++        );
++        continue;
++      }
++
++      const projects = (projRows ?? []) as Array<{ id: string }>;
++      if (projects.length === 0) {
++        console.log(`[cron] user ${userId} has 0 projects — skipping`);
++        continue;
++      }
++
++      for (const proj of projects) {
++        totalProjects++;
++        try {
++          const result = await syncProject({
++            userId,
++            projectId: proj.id,
++            isManual: false,
++          });
++
++          // Classify outcome. token_expired is signalled by syncProject as
++          // result.ok === false plus per-AA acquired:false with lockReason
++          // "token_expired" — we don't need to re-derive it here, just log
++          // the project-level status string and move on.
++          let status: string;
++          if (result.ok) {
++            status = "ok";
++            successCount++;
++          } else if (
++            result.results.some(
++              (r) =>
++                r.result.acquired === false &&
++                r.result.lockReason === "token_expired"
++            )
++          ) {
++            status = "token_expired";
++            failedCount++;
++          } else if (result.errorMessage) {
++            status = "error";
++            failedCount++;
++          } else {
++            status = "partial";
++            failedCount++;
++          }
++
++          console.log(
++            `[cron] user ${userId} project ${proj.id} sync status=${status} accounts=${result.totalAccounts}`
++          );
++        } catch (err) {
++          const msg = err instanceof Error ? err.message : String(err);
++          console.error(
++            `[cron] user ${userId} project ${proj.id} sync status=exception msg=${msg}`
++          );
++          failedCount++;
++        }
++      }
++    } catch (err) {
++      const msg = err instanceof Error ? err.message : String(err);
++      console.error(`[cron] user ${userId} skipped — unexpected error: ${msg}`);
++    }
++  }
++
++  const durationMs = Date.now() - startMs;
++  console.log(
++    `[cron] done users=${userIds.length} projects=${totalProjects} success=${successCount} failed=${failedCount} duration=${durationMs}ms`
++  );
++
++  return NextResponse.json({
++    total_users: userIds.length,
++    total_projects: totalProjects,
++    success_count: successCount,
++    failed_count: failedCount,
++    duration_ms: durationMs,
++  });
++}
+diff --git a/vercel.json b/vercel.json
+new file mode 100644
+index 0000000..e997214
+--- /dev/null
++++ b/vercel.json
+@@ -0,0 +1,5 @@
++{
++  "crons": [
++    { "path": "/api/cron/sync-all", "schedule": "0 6 * * *" }
++  ]
++}

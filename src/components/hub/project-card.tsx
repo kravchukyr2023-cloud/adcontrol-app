@@ -1,3 +1,11 @@
+import type { ProjectSummary } from "@/hooks/use-project-summaries";
+import {
+  computeProRatedTarget,
+  computeProgressPercent,
+  progressColor,
+  type MetricType,
+} from "@/lib/project-progress";
+
 type Props = {
   id: string;
   name: string;
@@ -6,6 +14,8 @@ type Props = {
   monthlyAdBudget: number;
   targetRoas: number;
   locked?: boolean;
+  /** This month's actual totals; `null` while the summaries call is in flight. */
+  summary?: ProjectSummary | null;
   onOpen: (id: string) => void;
   onLockedClick?: () => void;
 };
@@ -28,6 +38,15 @@ function fmt(currency: string, value: number): string {
   return `${currency} ${value.toLocaleString()}`;
 }
 
+/** Format an "actual" value. 0 still renders as "currency 0" (not "—"). */
+function fmtActual(currency: string, value: number): string {
+  if (value >= 1000) {
+    return `${currency} ${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+  }
+  // round to int for compactness in the small card layout
+  return `${currency} ${Math.round(value).toLocaleString()}`;
+}
+
 export default function ProjectCard({
   id,
   name,
@@ -36,6 +55,7 @@ export default function ProjectCard({
   monthlyAdBudget,
   targetRoas,
   locked,
+  summary,
   onOpen,
   onLockedClick,
 }: Props) {
@@ -48,6 +68,8 @@ export default function ProjectCard({
       onOpen(id);
     }
   }
+
+  const isConnected = !locked && summary?.hasActiveMetaConnection === true;
 
   return (
     <div
@@ -77,6 +99,10 @@ export default function ProjectCard({
             </svg>
             Paused
           </span>
+        ) : isConnected ? (
+          <span className="text-[10px] uppercase tracking-wider text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 rounded-full">
+            Meta connected
+          </span>
         ) : (
           <span className="text-[10px] uppercase tracking-wider text-zinc-400 border border-[#1B2238] bg-black/30 px-2 py-1 rounded-full">
             Waiting for integrations
@@ -94,19 +120,46 @@ export default function ProjectCard({
       <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-3">
         Monthly targets
       </p>
-      <div className="grid grid-cols-3 gap-2 mb-6">
-        <Metric label="Revenue" value={fmt(currency, monthlyRevenueGoal)} />
-        <Metric label="Spend" value={fmt(currency, monthlyAdBudget)} />
-        <Metric
+      <div className="grid grid-cols-1 gap-3 mb-6">
+        <MetricRow
+          label="Revenue"
+          metric="revenue"
+          currency={currency}
+          target={monthlyRevenueGoal}
+          actual={summary?.actualRevenue ?? null}
+          loaded={summary !== undefined && summary !== null}
+        />
+        <MetricRow
+          label="Spend"
+          metric="spend"
+          currency={currency}
+          target={monthlyAdBudget}
+          actual={summary?.actualSpend ?? null}
+          loaded={summary !== undefined && summary !== null}
+        />
+        <MetricRow
           label="ROAS"
-          value={targetRoas ? `${targetRoas.toFixed(1)}x` : "—"}
+          metric="roas"
+          currency={null}
+          target={targetRoas}
+          actual={summary?.actualRoas ?? null}
+          loaded={summary !== undefined && summary !== null}
+          isRoas
         />
       </div>
 
       <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-6">
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+        <span
+          className={
+            isConnected
+              ? "w-1.5 h-1.5 rounded-full bg-emerald-500"
+              : "w-1.5 h-1.5 rounded-full bg-zinc-600"
+          }
+        />
         {locked
           ? "Paused — payment required"
+          : isConnected
+          ? "Meta connected · Data updated daily"
           : "Meta not connected · No synced data"}
       </div>
 
@@ -124,21 +177,101 @@ export default function ProjectCard({
   );
 }
 
-function Metric({
-  label,
-  value,
-}: {
+type MetricRowProps = {
   label: string;
-  value: string;
-}) {
+  metric: MetricType;
+  /** Currency code, or `null` for ROAS (unit is "x"). */
+  currency: string | null;
+  /** Monthly target. `0` ⇒ no plan-vs-actual UI; show actual only. */
+  target: number;
+  /** Actual value for this month. `null` ⇒ summaries still loading. */
+  actual: number | null;
+  loaded: boolean;
+  isRoas?: boolean;
+};
+
+function MetricRow({
+  label,
+  metric,
+  currency,
+  target,
+  actual,
+  loaded,
+  isRoas,
+}: MetricRowProps) {
+  const hasTarget = target > 0;
+  const renderActual = (v: number): string => {
+    if (isRoas) return `${v.toFixed(1)}x`;
+    if (currency) return fmtActual(currency, v);
+    return v.toLocaleString();
+  };
+  const renderTarget = (v: number): string => {
+    if (isRoas) return `${v.toFixed(1)}x`;
+    if (currency) return fmt(currency, v);
+    return v.toLocaleString();
+  };
+
+  // --- not-yet-loaded skeleton ---
+  if (!loaded) {
+    return (
+      <div>
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+          <span>{label}</span>
+        </div>
+        <p className="text-sm font-semibold text-white truncate">
+          — {hasTarget ? `/ ${renderTarget(target)}` : ""}
+        </p>
+        {hasTarget && (
+          <div className="mt-1.5 h-1 rounded-full bg-[#1B2238] overflow-hidden">
+            <div className="h-full bg-[#1B2238]" />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const actualValue = actual ?? 0;
+
+  // --- no target → actual-only display ---
+  if (!hasTarget) {
+    return (
+      <div>
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+          <span>{label}</span>
+        </div>
+        <p className="text-sm font-semibold text-white truncate">
+          {renderActual(actualValue)}
+        </p>
+      </div>
+    );
+  }
+
+  // --- target set → plan vs actual with pro-rated bar ---
+  const proRatedTarget = computeProRatedTarget(target);
+  const percent = computeProgressPercent(actualValue, proRatedTarget);
+  const clampedWidth = Math.max(0, Math.min(percent, 100));
+  const barColor = progressColor(percent, metric);
+
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wider text-zinc-500">
-        {label}
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+        <span>{label}</span>
+        <span className="text-zinc-400 normal-case tracking-normal">
+          {Math.round(percent)}%
+        </span>
+      </div>
+      <p className="text-sm font-semibold text-white truncate">
+        {renderActual(actualValue)}{" "}
+        <span className="text-zinc-500 font-normal">
+          / {renderTarget(target)}
+        </span>
       </p>
-      <p className="text-sm font-semibold text-white mt-0.5 truncate">
-        {value}
-      </p>
+      <div className="mt-1.5 h-1 rounded-full bg-[#1B2238] overflow-hidden">
+        <div
+          className={`h-full rounded-full ${barColor}`}
+          style={{ width: `${clampedWidth}%` }}
+        />
+      </div>
     </div>
   );
 }

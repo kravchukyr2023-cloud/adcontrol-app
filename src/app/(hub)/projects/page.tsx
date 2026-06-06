@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { emitActiveProjectChange } from "@/hooks/use-active-project";
 import { useEntitlements } from "@/hooks/use-entitlements";
+import { useProjectSummaries } from "@/hooks/use-project-summaries";
 import { canCreateProject } from "@/lib/billing/can-create-project";
 import { getProjectUsage } from "@/lib/billing/get-project-usage";
 import { getAccessibleProjects } from "@/lib/billing/get-accessible-projects";
@@ -42,11 +43,19 @@ async function fetchProjects(): Promise<Project[]> {
 export default function ProjectsPage() {
   const router = useRouter();
   const { plan, limits } = useEntitlements();
+  const { summaries } = useProjectSummaries();
 
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
   const [subRequiredOpen, setSubRequiredOpen] = useState(false);
+
+  // O(1) lookup from projectId → this-month totals. Null while the
+  // summaries fetch is in flight — card renders a skeleton row in that
+  // case (see `loaded` prop on MetricRow).
+  const summaryByProject = summaries
+    ? new Map(summaries.map((s) => [s.projectId, s]))
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +150,11 @@ export default function ProjectsPage() {
                   monthlyAdBudget={p.monthly_ad_budget}
                   targetRoas={p.target_roas}
                   locked={locked}
+                  summary={
+                    summaryByProject
+                      ? summaryByProject.get(p.id) ?? null
+                      : null
+                  }
                   onOpen={handleOpen}
                   onLockedClick={() => setSubRequiredOpen(true)}
                 />

@@ -10,7 +10,19 @@ import {
 } from "@/hooks/use-meta-analytics";
 import { useGlobalPeriod } from "@/hooks/use-global-period";
 
-const FILTERS = ["All", "Active", "Paused", "Learning", "Limited"];
+type StatusFilter = "All" | "Active" | "Paused";
+
+const FILTERS: StatusFilter[] = ["All", "Active", "Paused"];
+
+// Meta surfaces three distinct codes for "stopped delivery" depending on
+// where the pause lives (campaign-level, ad-set-level, generic paused).
+// We collapse them under the single Paused tab — the user doesn't care
+// which level pressed the brake.
+const PAUSED_EFFECTIVE_STATUSES = [
+  "PAUSED",
+  "CAMPAIGN_PAUSED",
+  "ADSET_PAUSED",
+] as const;
 
 const COLS = [
   { key: "name", label: "Campaign", align: "left" as const },
@@ -96,6 +108,10 @@ export default function MetaAdsPage() {
 
   const [selectedBmId, setSelectedBmId] = useState<string>(ALL);
   const [selectedAaId, setSelectedAaId] = useState<string>(ALL);
+  // Default to "Active" — when the user opens /meta the first thing
+  // they want to see is what's currently delivering, not the historical
+  // pile that includes everything ever paused.
+  const [activeFilter, setActiveFilter] = useState<StatusFilter>("Active");
   // Date range is now driven by the global topbar selector. Local
   // preset state was removed in Stage 7 — single source of truth lives
   // in `useGlobalPeriod` / localStorage.
@@ -160,6 +176,28 @@ export default function MetaAdsPage() {
   const displayCurrency = analytics.adAccounts[0]?.currency ?? "USD";
 
   const campaigns: AnalyticsCampaign[] = analytics.campaigns;
+
+  // Client-side status filter. Server returns every campaign that had
+  // delivery in the window; we narrow by `effective_status` here so
+  // tab switches feel instant and don't refetch.
+  const filteredCampaigns = useMemo(() => {
+    if (activeFilter === "All") return campaigns;
+    if (activeFilter === "Active") {
+      return campaigns.filter((c) => c.effective_status === "ACTIVE");
+    }
+    return campaigns.filter(
+      (c) =>
+        c.effective_status !== null &&
+        (PAUSED_EFFECTIVE_STATUSES as readonly string[]).includes(
+          c.effective_status
+        )
+    );
+  }, [campaigns, activeFilter]);
+
+  // True iff raw analytics had campaigns but the active filter cleared
+  // them all. Distinct from `no_data` (raw is empty) — different copy.
+  const noFilteredMatch =
+    campaigns.length > 0 && filteredCampaigns.length === 0;
 
   type ViewMode =
     | "no_project"
@@ -298,18 +336,24 @@ export default function MetaAdsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {FILTERS.map((f, i) => (
-            <button
-              key={f}
-              className={
-                i === 0
-                  ? "h-8 px-3 rounded-lg text-xs border border-[#6D5EF8] bg-[#6D5EF8]/15 text-white transition"
-                  : "h-8 px-3 rounded-lg text-xs border border-[#1B2238] hover:border-zinc-700 text-zinc-300 transition"
-              }
-            >
-              {f}
-            </button>
-          ))}
+          {FILTERS.map((f) => {
+            const isActive = activeFilter === f;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setActiveFilter(f)}
+                aria-pressed={isActive}
+                className={
+                  isActive
+                    ? "h-8 px-3 rounded-lg text-xs border border-[#6D5EF8] bg-[#6D5EF8]/15 text-white transition"
+                    : "h-8 px-3 rounded-lg text-xs border border-[#1B2238] hover:border-zinc-700 text-zinc-300 transition"
+                }
+              >
+                {f}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -332,7 +376,7 @@ export default function MetaAdsPage() {
             )}
             <span className="text-xs text-zinc-500">
               {viewMode === "ok"
-                ? `${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"}`
+                ? `${filteredCampaigns.length} campaign${filteredCampaigns.length === 1 ? "" : "s"}`
                 : "0 campaigns"}
             </span>
           </div>
@@ -357,8 +401,21 @@ export default function MetaAdsPage() {
               </tr>
             </thead>
             <tbody>
+              {viewMode === "ok" && noFilteredMatch && (
+                <tr>
+                  <td colSpan={COLS.length} className="px-6 py-12">
+                    <p className="text-center text-zinc-500 text-sm">
+                      {activeFilter === "Paused"
+                        ? "No paused campaigns in the selected period."
+                        : "No active campaigns in the selected period."}
+                    </p>
+                  </td>
+                </tr>
+              )}
+
               {viewMode === "ok" &&
-                campaigns.map((c) => {
+                !noFilteredMatch &&
+                filteredCampaigns.map((c) => {
                   const cpaVal = cpa(c.spend, c.purchases);
                   const badge =
                     (c.effective_status && STATUS_BADGE[c.effective_status]) ||

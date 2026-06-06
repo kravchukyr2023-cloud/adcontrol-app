@@ -1,4 +1,45 @@
 @import "tailwindcss";
+@import "react-day-picker/style.css";
+
+/* ---------- react-day-picker dark theme override ----------
+   Scoped to .rdp-adcontrol so the upstream stylesheet only kicks in
+   where we explicitly opt-in. Variables follow react-day-picker v10's
+   public API (see node_modules/react-day-picker/src/style.css). */
+.rdp-adcontrol {
+  --rdp-accent-color: #6D5EF8;
+  --rdp-accent-background-color: rgba(109, 94, 248, 0.18);
+  --rdp-range_start-color: #ffffff;
+  --rdp-range_end-color: #ffffff;
+  --rdp-range_middle-color: #e4e4e7;
+  --rdp-range_middle-background-color: rgba(109, 94, 248, 0.22);
+  --rdp-today-color: #b2a8ff;
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 32px;
+  --rdp-day_button-width: 32px;
+  color: #e4e4e7;
+}
+.rdp-adcontrol .rdp-day_button:hover:not([disabled]) {
+  background-color: rgba(109, 94, 248, 0.15);
+  border-radius: 100%;
+}
+.rdp-adcontrol .rdp-chevron {
+  fill: #a1a1aa;
+}
+.rdp-adcontrol .rdp-weekday {
+  color: #71717a;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.rdp-adcontrol .rdp-month_caption {
+  font-weight: 600;
+  font-size: 13px;
+  color: #ffffff;
+}
+.rdp-adcontrol .rdp-nav button:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
 
 :root {
   --background: #ffffff;

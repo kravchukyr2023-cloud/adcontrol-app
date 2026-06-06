@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { META_SYNC_COMPLETED } from "@/lib/meta/events";
 
 /**
  * Client hook for GET /api/meta/analytics.
@@ -117,6 +118,18 @@ export function useMetaAnalytics(
   const [version, setVersion] = useState(0);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
+
+  // Re-fetch whenever the global Sync button reports a finished run.
+  // This is how /meta (and any other analytics consumer) reflects newly
+  // synced rows after the topbar-driven sync — no hard reload, no
+  // explicit refresh() call from the page.
+  useEffect(() => {
+    function onSyncDone() {
+      setVersion((v) => v + 1);
+    }
+    window.addEventListener(META_SYNC_COMPLETED, onSyncDone);
+    return () => window.removeEventListener(META_SYNC_COMPLETED, onSyncDone);
+  }, []);
 
   // Normalise filter values for the dependency array (avoids re-fetch loops
   // when callers pass fresh `filters` objects on every render).

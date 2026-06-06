@@ -8,7 +8,7 @@ import {
   useMetaAnalytics,
   type AnalyticsCampaign,
 } from "@/hooks/use-meta-analytics";
-import { useMetaSync, type MetaSyncState } from "@/hooks/use-meta-sync";
+import { useGlobalPeriod } from "@/hooks/use-global-period";
 
 const FILTERS = ["All", "Active", "Paused", "Learning", "Limited"];
 
@@ -30,75 +30,6 @@ const COLS = [
 ];
 
 const ALL = "__all__";
-
-type DatePreset =
-  | "today"
-  | "yesterday"
-  | "last_7_days"
-  | "this_month"
-  | "last_month"
-  | "last_30_days";
-
-const DATE_PRESETS: { value: DatePreset; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "yesterday", label: "Yesterday" },
-  { value: "last_7_days", label: "Last 7 days" },
-  { value: "this_month", label: "This month" },
-  { value: "last_month", label: "Last month" },
-  { value: "last_30_days", label: "Last 30 days" },
-];
-
-function toIsoUtcDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function presetToRange(preset: DatePreset): {
-  since: string;
-  until: string;
-} {
-  const now = new Date();
-  const today = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-
-  switch (preset) {
-    case "today":
-      return { since: toIsoUtcDate(today), until: toIsoUtcDate(today) };
-    case "yesterday": {
-      const y = new Date(today);
-      y.setUTCDate(y.getUTCDate() - 1);
-      return { since: toIsoUtcDate(y), until: toIsoUtcDate(y) };
-    }
-    case "last_7_days": {
-      // Rolling 7-day window inclusive of today.
-      const s = new Date(today);
-      s.setUTCDate(s.getUTCDate() - 6);
-      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
-    }
-    case "this_month": {
-      const s = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
-      );
-      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
-    }
-    case "last_month": {
-      const s = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)
-      );
-      // Day 0 of current month = last day of previous month.
-      const e = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)
-      );
-      return { since: toIsoUtcDate(s), until: toIsoUtcDate(e) };
-    }
-    case "last_30_days": {
-      // Rolling 30-day window inclusive of today.
-      const s = new Date(today);
-      s.setUTCDate(s.getUTCDate() - 29);
-      return { since: toIsoUtcDate(s), until: toIsoUtcDate(today) };
-    }
-  }
-}
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE:
@@ -151,35 +82,6 @@ function fmtRoas(v: number | null): string {
   return `×${v.toFixed(2)}`;
 }
 
-function fmtTimestamp(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day} ${h}:${mi}`;
-}
-
-const SYNC_PILL: Record<MetaSyncState, string> = {
-  idle: "",
-  syncing:
-    "bg-[#6D5EF8]/10 border-[#6D5EF8]/40 text-[#b2a8ff]",
-  success: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
-  partial: "bg-amber-500/10 border-amber-500/30 text-amber-300",
-  error: "bg-rose-500/10 border-rose-500/30 text-rose-300",
-};
-
-const SYNC_LABEL: Record<MetaSyncState, string> = {
-  idle: "",
-  syncing: "Syncing…",
-  success: "Synced",
-  partial: "Partial sync",
-  error: "Failed",
-};
-
 function cpa(spend: number, purchases: number): number | null {
   return purchases > 0 ? spend / purchases : null;
 }
@@ -194,9 +96,10 @@ export default function MetaAdsPage() {
 
   const [selectedBmId, setSelectedBmId] = useState<string>(ALL);
   const [selectedAaId, setSelectedAaId] = useState<string>(ALL);
-  const [datePreset, setDatePreset] = useState<DatePreset>("this_month");
-
-  const dateRange = useMemo(() => presetToRange(datePreset), [datePreset]);
+  // Date range is now driven by the global topbar selector. Local
+  // preset state was removed in Stage 7 — single source of truth lives
+  // in `useGlobalPeriod` / localStorage.
+  const { range: dateRange } = useGlobalPeriod();
 
   const bmOptions = overview.business_managers;
 
@@ -232,15 +135,9 @@ export default function MetaAdsPage() {
     until: dateRange.until,
   });
 
-  const sync = useMetaSync(projectId);
-
-  const handleRefresh = async () => {
-    const r = await sync.trigger();
-    // Re-fetch the table/summary if anything actually persisted.
-    if (r.state === "success" || r.state === "partial") {
-      analytics.refresh();
-    }
-  };
+  // Sync trigger + local "Last synced" badge moved to the global topbar
+  // in Stage 7. `useMetaAnalytics` now refetches automatically when the
+  // topbar Sync emits META_SYNC_COMPLETED.
 
   const headerBmLabel =
     selectedBmId === ALL
@@ -303,59 +200,18 @@ export default function MetaAdsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
-            Meta Ads
-          </h1>
-          <p className="text-sm text-zinc-400 mt-2">
-            Campaigns, ad sets and creatives across your Meta business managers.
-            {analytics.dateRange && (
-              <span className="ml-2 text-zinc-500">
-                · {analytics.dateRange.since} → {analytics.dateRange.until}
-              </span>
-            )}
-          </p>
-        </div>
-
-        <div className="flex flex-col items-start lg:items-end gap-1.5">
-          <div className="flex items-center gap-2">
-            {sync.state !== "idle" && (
-              <span
-                className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${SYNC_PILL[sync.state]}`}
-                title={sync.message ?? undefined}
-              >
-                {sync.state === "syncing" && (
-                  <span className="w-1.5 h-1.5 mr-1.5 rounded-full bg-[#b2a8ff] animate-pulse" />
-                )}
-                {SYNC_LABEL[sync.state]}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={sync.state === "syncing" || !project}
-              className="h-10 px-4 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] disabled:bg-[#2a2347] disabled:text-zinc-400 disabled:cursor-not-allowed text-white text-sm font-medium transition inline-flex items-center justify-center"
-            >
-              {sync.state === "syncing" ? "Syncing…" : "Refresh Meta Data"}
-            </button>
-          </div>
-          <div className="text-xs text-zinc-500">
-            {analytics.lastSyncedAt
-              ? `Last synced: ${fmtTimestamp(analytics.lastSyncedAt)}`
-              : "Last synced: —"}
-          </div>
-          {sync.state === "partial" && sync.message && (
-            <div className="text-xs text-amber-300/80 max-w-sm text-right">
-              {sync.message}. Showing previously synced data below.
-            </div>
+      <div>
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
+          Meta Ads
+        </h1>
+        <p className="text-sm text-zinc-400 mt-2">
+          Campaigns, ad sets and creatives across your Meta business managers.
+          {analytics.dateRange && (
+            <span className="ml-2 text-zinc-500">
+              · {analytics.dateRange.since} → {analytics.dateRange.until}
+            </span>
           )}
-          {sync.state === "error" && sync.message && (
-            <div className="text-xs text-rose-300/80 max-w-sm text-right">
-              {sync.message}
-            </div>
-          )}
-        </div>
+        </p>
       </div>
 
       {/* Summary cards — bound to /api/meta/analytics summary */}
@@ -436,19 +292,6 @@ export default function MetaAdsPage() {
             {aaOptions.map((aa) => (
               <option key={aa.id} value={aa.id}>
                 {aa.name ?? aa.meta_ad_account_id ?? "—"}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Date range"
-            value={datePreset}
-            onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-            className="h-10 px-3 bg-[#0B1020] border border-[#1B2238] rounded-xl outline-none text-sm text-zinc-200 focus:border-[#6D5EF8]"
-          >
-            {DATE_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
               </option>
             ))}
           </select>

@@ -5,6 +5,11 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { openAccountCenter } from "@/lib/account-center/open";
+import { useActiveProject } from "@/hooks/use-active-project";
+import { useGlobalPeriod } from "@/hooks/use-global-period";
+import { useMetaSync } from "@/hooks/use-meta-sync";
+import { DATE_PRESETS, type DatePreset } from "@/lib/date-presets";
+import { emitMetaSyncCompleted } from "@/lib/meta/events";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -20,6 +25,11 @@ export default function Topbar() {
   const title = TITLES[pathname] ?? "Workspace";
   const [email, setEmail] = useState("");
 
+  const { project } = useActiveProject();
+  const projectId = project?.id ?? null;
+  const { preset, setPreset } = useGlobalPeriod();
+  const sync = useMetaSync(projectId);
+
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -34,6 +44,20 @@ export default function Topbar() {
   }, []);
 
   const initials = email ? email.slice(0, 2).toUpperCase() : "AC";
+
+  // TODO(stage8): tooltip with `Last synced: …` from a dedicated
+  // /api/meta/last-sync endpoint. Skipped this iteration to keep the
+  // surface minimal until the data source is finalised.
+  const handleSync = async () => {
+    if (!projectId || sync.state === "syncing") return;
+    const r = await sync.trigger();
+    if (r.state === "success" || r.state === "partial") {
+      emitMetaSyncCompleted();
+    }
+  };
+
+  const syncing = sync.state === "syncing";
+  const syncDisabled = !projectId || syncing;
 
   return (
     <header className="h-16 bg-[#0c0e18] border-b border-[#1B2238] flex items-center justify-between gap-4 px-4 lg:px-6 sticky top-0 z-30">
@@ -65,16 +89,24 @@ export default function Topbar() {
 
       <div className="flex items-center gap-2">
 
-        <button className="hidden lg:flex items-center gap-2 text-xs text-zinc-300 border border-[#1B2238] hover:border-zinc-700 rounded-md px-3 py-1.5 transition">
+        <div className="hidden lg:flex items-center gap-1.5 text-xs text-zinc-300 border border-[#1B2238] hover:border-zinc-700 rounded-md px-2.5 py-1 transition">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="4" width="18" height="18" rx="2" />
             <path d="M16 2v4M8 2v4M3 10h18" />
           </svg>
-          Last 7 days
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M7 9l5 5 5-5" />
-          </svg>
-        </button>
+          <select
+            aria-label="Date range"
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as DatePreset)}
+            className="bg-transparent outline-none text-xs text-zinc-200 cursor-pointer pr-1"
+          >
+            {DATE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value} className="bg-[#0c0e18] text-zinc-200">
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="hidden md:flex items-center border border-[#1B2238] rounded-md text-xs overflow-hidden">
           <button className="px-2 py-1 text-white bg-[#1B2238]">EN</button>
@@ -91,11 +123,33 @@ export default function Topbar() {
           </svg>
         </button>
 
-        <button className="flex items-center gap-1.5 text-xs bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white font-medium rounded-md px-3 py-1.5 transition">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-          </svg>
-          Sync
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncDisabled}
+          aria-label="Sync Meta data for the active project"
+          className="flex items-center gap-1.5 text-xs bg-[#6D5EF8] hover:bg-[#7d6ef9] disabled:bg-[#2a2347] disabled:text-zinc-400 disabled:cursor-not-allowed text-white font-medium rounded-md px-3 py-1.5 transition"
+        >
+          {syncing ? (
+            <svg
+              className="animate-spin"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 12a9 9 0 11-6.219-8.56" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+            </svg>
+          )}
+          {syncing ? "Syncing…" : "Sync"}
         </button>
 
         <button

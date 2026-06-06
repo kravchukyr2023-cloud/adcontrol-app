@@ -103,16 +103,18 @@ export async function GET() {
     );
   }
 
-  // PostgREST returns embedded relations as arrays regardless of cardinality
-  // (the FK here is many-to-one, but the response shape is always `[parent]`).
-  // We pluck `[0]` and treat a missing parent as "chain broken".
+  // PostgREST returns to-one embeds (FK on the embedding side) as a
+  // single object, not an array. Supabase-js TS inference is conservative
+  // and surfaces both shapes as arrays — we cast through `unknown` to the
+  // correct runtime shape, matching the pattern in
+  // `src/app/api/meta/project-aas/route.ts` (see lines 87-94).
   type BindingRow = {
     project_id: string;
     meta_ad_account_id: string | null;
-    project_meta_business_managers: Array<{
+    project_meta_business_managers: {
       status: string | null;
-      meta_connections: Array<{ status: string | null }> | null;
-    }> | null;
+      meta_connections: { status: string | null } | null;
+    } | null;
   };
 
   // Per-project: set of meta_ad_accounts.id (uuid) values whose entire
@@ -121,9 +123,9 @@ export async function GET() {
   const projectAaMap = new Map<string, Set<string>>();
   const projectConnectedSet = new Set<string>();
 
-  for (const b of (bindingRows ?? []) as BindingRow[]) {
-    const bm = b.project_meta_business_managers?.[0];
-    const conn = bm?.meta_connections?.[0];
+  for (const b of (bindingRows ?? []) as unknown as BindingRow[]) {
+    const bm = b.project_meta_business_managers;
+    const conn = bm?.meta_connections;
     const bmActive = bm?.status === "active";
     const connActive = conn?.status === "active";
     if (!bmActive || !connActive) continue;

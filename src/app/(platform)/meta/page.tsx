@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useActiveProject } from "@/hooks/use-active-project";
 import { useMetaOverview } from "@/hooks/use-meta-overview";
@@ -9,6 +9,8 @@ import {
   type AnalyticsCampaign,
 } from "@/hooks/use-meta-analytics";
 import { useGlobalPeriod } from "@/hooks/use-global-period";
+import { META_SYNC_COMPLETED } from "@/lib/meta/events";
+import AdsetSection from "@/components/meta/adset-section";
 
 type StatusFilter = "All" | "Active" | "Paused";
 
@@ -116,6 +118,44 @@ export default function MetaAdsPage() {
   // preset state was removed in Stage 7 — single source of truth lives
   // in `useGlobalPeriod` / localStorage.
   const { range: dateRange } = useGlobalPeriod();
+
+  // Drill-down expand state at the campaign level. The deeper levels
+  // (adsets-section → ads-section) own their own expand state via
+  // sub-component-local Sets, so all per-row state below this Set
+  // automatically resets when a campaign collapses.
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Period-change reset. Done via render-time derive (not useEffect)
+  // per the React 19 "you might not need an Effect" guidance — keeps
+  // the reset synchronous so the next render already sees the empty
+  // Set, avoiding a flicker of stale drill-downs.
+  const periodFp = `${dateRange.since}|${dateRange.until}`;
+  const [lastSeenPeriodFp, setLastSeenPeriodFp] = useState(periodFp);
+  if (lastSeenPeriodFp !== periodFp) {
+    setLastSeenPeriodFp(periodFp);
+    setExpandedCampaigns(new Set());
+  }
+
+  // Sync-completed reset stays in useEffect: this is true external-
+  // subscription territory (window event), not derived state.
+  useEffect(() => {
+    function onSyncDone() {
+      setExpandedCampaigns(new Set());
+    }
+    window.addEventListener(META_SYNC_COMPLETED, onSyncDone);
+    return () => window.removeEventListener(META_SYNC_COMPLETED, onSyncDone);
+  }, []);
+
+  const toggleCampaign = (id: string) => {
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const bmOptions = overview.business_managers;
 
@@ -386,6 +426,9 @@ export default function MetaAdsPage() {
           <table className="w-full text-sm min-w-[1200px]">
             <thead className="text-[10px] text-zinc-500 uppercase tracking-wider bg-black/30">
               <tr>
+                {/* Leading column for the drill-down chevron. Empty
+                    header keeps the visual hierarchy clean. */}
+                <th className="w-6"></th>
                 {COLS.map((c) => (
                   <th
                     key={c.key}
@@ -403,7 +446,7 @@ export default function MetaAdsPage() {
             <tbody>
               {viewMode === "ok" && noFilteredMatch && (
                 <tr>
-                  <td colSpan={COLS.length} className="px-6 py-12">
+                  <td colSpan={COLS.length + 1} className="px-6 py-12">
                     <p className="text-center text-zinc-500 text-sm">
                       {activeFilter === "Paused"
                         ? "No paused campaigns in the selected period."
@@ -420,11 +463,42 @@ export default function MetaAdsPage() {
                   const badge =
                     (c.effective_status && STATUS_BADGE[c.effective_status]) ||
                     "bg-zinc-500/10 border-zinc-500/30 text-zinc-300";
+                  const isOpen = expandedCampaigns.has(c.id);
                   return (
+                    <CampaignRowGroup key={c.id}>
                     <tr
-                      key={c.id}
                       className="border-t border-[#1B2238] hover:bg-white/[0.02] transition"
                     >
+                      <td className="px-1 py-3 text-center align-top">
+                        <button
+                          type="button"
+                          onClick={() => toggleCampaign(c.id)}
+                          aria-expanded={isOpen}
+                          aria-label={
+                            isOpen ? "Collapse ad sets" : "Expand ad sets"
+                          }
+                          className="text-[#a99cff] hover:text-white transition"
+                        >
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                              transform: isOpen
+                                ? "rotate(90deg)"
+                                : "rotate(0)",
+                              transition: "transform 120ms ease",
+                            }}
+                          >
+                            <path d="M9 6l6 6-6 6" />
+                          </svg>
+                        </button>
+                      </td>
                       <td className="px-3 py-3 text-left">
                         <div className="text-white truncate max-w-[280px]">
                           {c.campaign_name ?? "—"}
@@ -475,12 +549,28 @@ export default function MetaAdsPage() {
                       </td>
                       <td className="px-3 py-3 text-right"></td>
                     </tr>
+                    {isOpen && (
+                      <tr>
+                        <td></td>
+                        <td colSpan={COLS.length} className="px-3 pb-4">
+                          <div className="pl-4 border-l border-[#1B2238]">
+                            <AdsetSection
+                              campaignId={c.id}
+                              since={dateRange.since}
+                              until={dateRange.until}
+                              currency={displayCurrency}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </CampaignRowGroup>
                   );
                 })}
 
               {viewMode !== "ok" && (
                 <tr>
-                  <td colSpan={COLS.length} className="px-6 py-12">
+                  <td colSpan={COLS.length + 1} className="px-6 py-12">
                     {viewMode === "no_project" && (
                       <p className="text-center text-zinc-500 text-sm">
                         Select a project to load Meta Ads.
@@ -542,6 +632,14 @@ export default function MetaAdsPage() {
       </section>
     </div>
   );
+}
+
+// Adjacent <tr>s for a single campaign (main row + drill-down row)
+// need a shared key. React doesn't allow keying a Fragment shorthand
+// inside .map, so this trivial wrapper lets us key once at the
+// outer call site.
+function CampaignRowGroup({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
 
 function MetricCard({

@@ -61,10 +61,7 @@ export async function upsertAccountInsights(params: {
       frequency: r.frequency,
       purchases: r.purchases,
       leads: r.leads,
-      // revenue is intentionally null in V1 — actions-normalizer does not
-      // extract it. raw_actions preserves action_values so revenue can
-      // be backfilled later without re-fetching from Meta.
-      revenue: null,
+      revenue: r.revenue,
       currency: params.currency,
       raw_actions: r.raw_actions,
       last_synced_at: now,

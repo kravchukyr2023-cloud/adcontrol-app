@@ -81,6 +81,14 @@ export type InsightRecord = {
    * Picks the first present action_type with value > 0. Does NOT sum.
    */
   leads: number;
+  /**
+   * Normalized via actions-normalizer: priority-OR across the same
+   *   omni_purchase → offsite_conversion.fb_pixel_purchase
+   *   → onsite_web_purchase → purchase
+   * chain, applied to `action_values[]` (monetary side). `null` means
+   * no chain entry yielded a positive value — distinct from "EUR 0".
+   */
+  revenue: number | null;
   /** Verbatim Meta arrays for raw_actions jsonb storage. */
   raw_actions: {
     actions: MetaAction[];
@@ -211,6 +219,7 @@ function mapRow(
     frequency: parseNumOrNull(raw.frequency),
     purchases: norm.purchases,
     leads: norm.leads,
+    revenue: norm.revenue,
     raw_actions: norm.rawActions,
   };
 }

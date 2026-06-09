@@ -2,12 +2,13 @@ import "server-only";
 
 /**
  * Normalize Meta insights `actions[]` and `action_values[]` arrays
- * into product-level counters (purchases, leads).
+ * into product-level counters (purchases, leads) and the revenue
+ * monetary value.
  *
  * Priority-OR semantics:
  *   For each metric we walk an ordered priority chain of Meta action_type
- *   strings and take the FIRST present action whose integer value > 0.
- *   We do NOT sum across types — Meta typically reports the same physical
+ *   strings and take the FIRST present action whose value > 0. We do NOT
+ *   sum across types — Meta typically reports the same physical
  *   conversion under multiple action_type strings (Pixel + CAPI + on-site +
  *   omni). Summing them inflates the counter by 2-4×; the historical
  *   PURCHASE_TYPES Set on this same code path was over-counting Ahimsa
@@ -24,6 +25,17 @@ import "server-only";
  *     → On-platform checkout (Shop on Meta).
  *   purchase
  *     → Classic Pixel Standard Event. Last fallback for legacy setups.
+ *
+ * REVENUE — same priority chain as PURCHASES.
+ *   Meta mirrors every purchase action_type in `action_values[]` with
+ *   the same `action_type` string and a monetary `value`. The same
+ *   over-count risk exists (omni_purchase + offsite_conversion.fb_pixel_purchase
+ *   + purchase all carry the same money). Picking the first non-zero
+ *   along the chain dedups the same way `purchases` does.
+ *
+ *   Returns `null` (not 0) when no chain entry yields a positive value —
+ *   distinguishes "no monetary signal at all" from "zero euros billed"
+ *   so downstream UI can render an em-dash where appropriate.
  *
  * LEADS — priority chain:
  *   onsite_conversion.lead_grouped
@@ -69,6 +81,21 @@ const PURCHASE_PRIORITY: readonly string[] = [
 ] as const;
 
 /**
+ * Ordered priority chain for revenue monetary value.
+ * Intentionally identical to PURCHASE_PRIORITY — Meta uses the same
+ * action_type strings in `action_values[]` for the money side of each
+ * purchase event. Kept as a separate constant so the count side and
+ * the money side can diverge later (e.g., promoting a chain entry for
+ * revenue only) without one change accidentally moving the other.
+ */
+const REVENUE_PRIORITY: readonly string[] = [
+  "omni_purchase",
+  "offsite_conversion.fb_pixel_purchase",
+  "onsite_web_purchase",
+  "purchase",
+] as const;
+
+/**
  * Ordered priority chain for lead counter.
  * See docstring above for unverified caveat on `onsite_conversion.lead_grouped`.
  */
@@ -93,6 +120,12 @@ export type NormalizedActions = {
   purchases: number;
   leads: number;
   /**
+   * Monetary value picked along REVENUE_PRIORITY. `null` ⇒ no chain
+   * entry had a positive value (caller should NOT coerce to 0;
+   * downstream UI distinguishes the two).
+   */
+  revenue: number | null;
+  /**
    * Verbatim Meta payload — written to `raw_actions jsonb` on every
    * insight row. Preserved so future re-mapping (e.g., reordering the
    * chain or adding new action_types) doesn't require re-syncing from
@@ -111,6 +144,20 @@ function toInt(v: unknown): number {
     return Number.isFinite(n) ? Math.trunc(n) : 0;
   }
   return 0;
+}
+
+/**
+ * Float-preserving variant of `toInt`. Returns `null` for unparseable
+ * input — revenue uses this so we can distinguish "0.00 reported" from
+ * "couldn't parse the value".
+ */
+function toFloatOrNull(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 /**
@@ -148,6 +195,43 @@ function pickFirstByPriority(
   return 0;
 }
 
+/**
+ * Float variant of `pickFirstByPriority` used for monetary values.
+ * Returns `null` when no chain entry has a positive value — see the
+ * NormalizedActions.revenue docstring for why null vs 0 matters.
+ */
+function pickFirstFloatByPriority(
+  actionValues: MetaActionValue[],
+  priority: readonly string[]
+): number | null {
+  const map = new Map<string, number>();
+  for (const a of actionValues) {
+    if (!a || typeof a.action_type !== "string") continue;
+    const v = toFloatOrNull(a.value);
+    if (v !== null && v > 0 && !map.has(a.action_type)) {
+      map.set(a.action_type, v);
+    }
+  }
+  for (const t of priority) {
+    const v = map.get(t);
+    if (v !== undefined) return v;
+  }
+  return null;
+}
+
+/**
+ * Exposed for the backfill module — re-applies the REVENUE_PRIORITY
+ * chain to a stored `action_values[]` payload without going through
+ * the full normalizeActions() path. Used by `backfill-revenue.ts`
+ * to recompute revenue on historical rows from the preserved
+ * `raw_actions` JSONB.
+ */
+export function pickRevenueFromActionValues(
+  actionValues: MetaActionValue[]
+): number | null {
+  return pickFirstFloatByPriority(actionValues, REVENUE_PRIORITY);
+}
+
 export function normalizeActions(params: {
   actions?: MetaAction[] | null;
   actionValues?: MetaActionValue[] | null;
@@ -158,6 +242,7 @@ export function normalizeActions(params: {
   return {
     purchases: pickFirstByPriority(actions, PURCHASE_PRIORITY),
     leads: pickFirstByPriority(actions, LEAD_PRIORITY),
+    revenue: pickFirstFloatByPriority(actionValues, REVENUE_PRIORITY),
     rawActions: {
       actions,
       action_values: actionValues,

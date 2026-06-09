@@ -82,7 +82,7 @@ export async function upsertAdInsights(params: {
       frequency: r.frequency,
       purchases: r.purchases,
       leads: r.leads,
-      revenue: null,
+      revenue: r.revenue,
       currency: params.currency,
       raw_actions: r.raw_actions,
       last_synced_at: now,

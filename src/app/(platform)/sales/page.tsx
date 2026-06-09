@@ -1,36 +1,21 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { canAccess } from "@/lib/billing/feature-access";
 import LockedPagePlaceholder from "@/components/billing/locked-page-placeholder";
-
-const KPIS_FULL = [
-  { label: "Revenue", value: "$0", note: "0 orders" },
-  { label: "Orders", value: "0", note: "0 today" },
-  { label: "AOV", value: "$0", note: "Across all sources" },
-  { label: "Real ROAS", value: "0.0x", note: "vs Meta 0.0x" },
-  { label: "Budget", value: "$0", note: "0% used" },
-];
+import { useActiveProject } from "@/hooks/use-active-project";
+import { useGlobalPeriod } from "@/hooks/use-global-period";
+import { useMetaOverview } from "@/hooks/use-meta-overview";
+import { useMetaAnalytics } from "@/hooks/use-meta-analytics";
+import { META_SYNC_COMPLETED } from "@/lib/meta/events";
+import SalesAdsetSection from "@/components/sales/sales-adset-section";
 
 const KPIS_MANUAL = [
   { label: "Revenue", value: "$0", note: "Manual orders" },
   { label: "Orders", value: "0", note: "0 today" },
   { label: "AOV", value: "$0", note: "Across manual entries" },
-];
-
-const COMPARE_COLS = [
-  "Campaign / Ad Set / Ad",
-  "Spend",
-  "Meta Rev",
-  "Real Rev",
-  "Meta Sales",
-  "Real Sales",
-  "Meta CPA",
-  "Real CPA",
-  "Meta ROAS",
-  "Real ROAS",
-  "Diff",
-  "Status",
 ];
 
 const ORDER_COLS = [
@@ -187,7 +172,138 @@ function SalesRestricted() {
   );
 }
 
+function fmtMoneySales(currency: string, v: number | null): string {
+  if (v === null) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(v);
+  } catch {
+    return `${currency} ${v.toFixed(2)}`;
+  }
+}
+function fmtIntSales(v: number): string {
+  return new Intl.NumberFormat("en-US").format(Math.round(v));
+}
+function fmtRoasSales(v: number | null): string {
+  if (v === null) return "—";
+  return `×${v.toFixed(2)}`;
+}
+function cpaSales(spend: number, purchases: number): number | null {
+  if (purchases <= 0) return null;
+  const v = spend / purchases;
+  return Number.isFinite(v) ? v : null;
+}
+
+// Comparison-table columns. Chevron is rendered as a separate leading
+// cell (not in this list) so `colSpan={COMPARE_LEN}` on the drill-down
+// row matches the data columns exactly.
+const COMPARE_HEADS = [
+  { key: "name", label: "Campaign", align: "left" as const },
+  { key: "spend", label: "Spend", align: "right" as const },
+  { key: "meta_rev", label: "Meta rev", align: "right" as const },
+  { key: "real_rev", label: "Real rev", align: "right" as const },
+  { key: "meta_sales", label: "Meta sales", align: "right" as const },
+  { key: "real_sales", label: "Real sales", align: "right" as const },
+  { key: "meta_cpa", label: "Meta CPA", align: "right" as const },
+  { key: "real_cpa", label: "Real CPA", align: "right" as const },
+  { key: "meta_roas", label: "Meta ROAS", align: "right" as const },
+  { key: "real_roas", label: "Real ROAS", align: "right" as const },
+  { key: "diff", label: "Diff", align: "right" as const },
+];
+
 function SalesFull() {
+  const { project } = useActiveProject();
+  const projectId = project?.id ?? null;
+  const { range } = useGlobalPeriod();
+
+  const overview = useMetaOverview(projectId);
+  const analytics = useMetaAnalytics(projectId, {
+    since: range.since,
+    until: range.until,
+  });
+
+  // Drill-down expand state. Same cascading-unmount strategy as /meta
+  // (Stage 13): collapse-on-period-change + collapse-on-sync.
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(
+    new Set()
+  );
+  const periodFp = `${range.since}|${range.until}`;
+  const [lastSeenPeriodFp, setLastSeenPeriodFp] = useState(periodFp);
+  if (lastSeenPeriodFp !== periodFp) {
+    setLastSeenPeriodFp(periodFp);
+    setExpandedCampaigns(new Set());
+  }
+  useEffect(() => {
+    function onSyncDone() {
+      setExpandedCampaigns(new Set());
+    }
+    window.addEventListener(META_SYNC_COMPLETED, onSyncDone);
+    return () => window.removeEventListener(META_SYNC_COMPLETED, onSyncDone);
+  }, []);
+  const toggleCampaign = (id: string) => {
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // --- Full-page replacement when no project ---
+  if (!project) {
+    return (
+      <div className="border border-[#1B2238] rounded-2xl p-12 bg-[#0B1020]">
+        <p className="text-sm text-zinc-400 text-center">
+          Select a project to see attribution data.
+        </p>
+      </div>
+    );
+  }
+
+  const currency =
+    analytics.adAccounts[0]?.currency ?? project.currency ?? "USD";
+
+  // KPI cards. Only BUDGET is wired to live data this stage; the other
+  // four stay placeholders because there's still no attribution source.
+  const KPIS = [
+    { label: "Revenue", value: "$0", note: "0 orders" },
+    { label: "Orders", value: "0", note: "0 today" },
+    { label: "AOV", value: "$0", note: "Across all sources" },
+    { label: "Real ROAS", value: "0.0x", note: "vs Meta 0.0x" },
+    {
+      label: "Budget",
+      value: fmtMoneySales(currency, analytics.summary.spend),
+      note: "Total spend for the period",
+    },
+  ];
+
+  // FSM mirrors /meta. We don't surface a separate "error" copy here —
+  // the analytics error message stays in the table body so it doesn't
+  // shadow the Budget card.
+  const overviewSettled =
+    overview.status === "ready" || overview.status === "error";
+  const analyticsSettled =
+    analytics.status === "ready" || analytics.status === "error";
+  const isLoading = !overviewSettled || !analyticsSettled;
+  const hasAnyBinding = overview.business_managers.some(
+    (b) => b.ad_accounts.length > 0
+  );
+  const campaigns = analytics.campaigns;
+
+  type TableMode = "loading" | "error" | "no_connection" | "no_data" | "ok";
+  const tableMode: TableMode = isLoading
+    ? "loading"
+    : analytics.error
+    ? "error"
+    : !hasAnyBinding
+    ? "no_connection"
+    : campaigns.length === 0
+    ? "no_data"
+    : "ok";
+
   return (
     <div className="space-y-6">
 
@@ -242,7 +358,7 @@ function SalesFull() {
       </section>
 
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {KPIS_FULL.map((k) => (
+        {KPIS.map((k) => (
           <div
             key={k.label}
             className="border border-[#1B2238] rounded-2xl p-5 bg-[#0B1020]"
@@ -259,36 +375,169 @@ function SalesFull() {
       <section className="border border-[#1B2238] rounded-2xl bg-[#0B1020] overflow-hidden">
         <div className="px-6 py-4 border-b border-[#1B2238] flex items-center justify-between">
           <h3 className="text-sm font-semibold">Meta vs Real ROAS</h3>
-          <span className="text-xs text-zinc-500">0 rows</span>
+          <span className="text-xs text-zinc-500">
+            {tableMode === "ok"
+              ? `${campaigns.length} row${campaigns.length === 1 ? "" : "s"}`
+              : "0 rows"}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[1200px]">
             <thead className="text-[10px] text-zinc-500 uppercase tracking-wider bg-black/30">
               <tr>
-                {COMPARE_COLS.map((c, i) => (
+                <th className="w-6"></th>
+                {COMPARE_HEADS.map((h) => (
                   <th
-                    key={c}
+                    key={h.key}
                     className={
-                      i === 0
-                        ? "text-left px-6 py-3 font-medium"
-                        : "text-right px-3 py-3 font-medium"
+                      h.align === "right"
+                        ? "text-right px-3 py-3 font-medium"
+                        : "text-left px-6 py-3 font-medium"
                     }
                   >
-                    {c}
+                    {h.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td
-                  colSpan={COMPARE_COLS.length}
-                  className="text-center px-6 py-12 text-zinc-500 text-sm"
-                >
-                  Connect Meta Ads and a sales source to compare reported vs real ROAS.
-                </td>
-              </tr>
+              {tableMode === "ok" &&
+                campaigns.map((c) => {
+                  const isOpen = expandedCampaigns.has(c.id);
+                  const cpaVal = cpaSales(c.spend, c.purchases);
+                  return (
+                    <SalesRowGroup key={c.id}>
+                      <tr className="border-t border-[#1B2238] hover:bg-white/[0.02] transition">
+                        <td className="px-1 py-3 text-center align-top">
+                          <button
+                            type="button"
+                            onClick={() => toggleCampaign(c.id)}
+                            aria-expanded={isOpen}
+                            aria-label={
+                              isOpen ? "Collapse ad sets" : "Expand ad sets"
+                            }
+                            className="text-[#a99cff] hover:text-white transition"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transform: isOpen
+                                  ? "rotate(90deg)"
+                                  : "rotate(0)",
+                                transition: "transform 120ms ease",
+                              }}
+                            >
+                              <path d="M9 6l6 6-6 6" />
+                            </svg>
+                          </button>
+                        </td>
+                        <td className="px-6 py-3 text-left">
+                          <div className="text-white truncate max-w-[280px]">
+                            {c.campaign_name ?? "—"}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 mt-0.5">
+                            {c.meta_campaign_id}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-right text-white font-medium">
+                          {fmtMoneySales(currency, c.spend)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-200">
+                          {fmtMoneySales(currency, c.revenue)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-500">
+                          —
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-200">
+                          {fmtIntSales(c.purchases)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-500">
+                          —
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-200">
+                          {fmtMoneySales(currency, cpaVal)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-500">
+                          —
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-200">
+                          {fmtRoasSales(c.roas)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-zinc-500">
+                          —
+                        </td>
+                        {/* DIFF is null until a real-side source exists. */}
+                        <td className="px-3 py-3 text-right text-zinc-500">
+                          —
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td></td>
+                          <td
+                            colSpan={COMPARE_HEADS.length}
+                            className="px-3 pb-4"
+                          >
+                            <div className="pl-4 border-l border-[#1B2238]">
+                              <SalesAdsetSection
+                                campaignId={c.id}
+                                since={range.since}
+                                until={range.until}
+                                currency={currency}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </SalesRowGroup>
+                  );
+                })}
+
+              {tableMode !== "ok" && (
+                <tr>
+                  <td
+                    colSpan={COMPARE_HEADS.length + 1}
+                    className="px-6 py-12"
+                  >
+                    {tableMode === "loading" && (
+                      <p className="text-center text-zinc-500 text-sm">
+                        Loading campaigns…
+                      </p>
+                    )}
+                    {tableMode === "error" && (
+                      <p className="text-center text-rose-400 text-sm">
+                        {analytics.error}
+                      </p>
+                    )}
+                    {tableMode === "no_connection" && (
+                      <div className="flex flex-col items-center text-center gap-3">
+                        <p className="text-sm text-zinc-400">
+                          Connect Meta Ads to see attribution data.
+                        </p>
+                        <Link
+                          href="/data-sources?focus=meta"
+                          className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-xs font-medium transition"
+                        >
+                          Open Data Sources →
+                        </Link>
+                      </div>
+                    )}
+                    {tableMode === "no_data" && (
+                      <p className="text-center text-zinc-500 text-sm">
+                        No campaigns with delivery in the selected period.
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -374,4 +623,9 @@ function SalesFull() {
 
     </div>
   );
+}
+
+// Adjacent <tr>s per campaign (main + drill-down) sharing one key.
+function SalesRowGroup({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }

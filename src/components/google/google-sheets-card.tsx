@@ -403,12 +403,15 @@ function SelectSheetState({
     setWorking(true);
     setActionError(null);
     try {
+      const selectedName =
+        list?.find((s) => s.id === selected)?.name ?? null;
       const resp = await fetch("/api/google/sheets/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project_id: projectId,
           spreadsheet_id: selected,
+          spreadsheet_name: selectedName,
         }),
       });
       const data = (await resp.json().catch(() => ({}))) as {

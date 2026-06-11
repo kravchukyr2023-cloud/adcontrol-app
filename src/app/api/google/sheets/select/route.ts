@@ -33,8 +33,36 @@ const EXPECTED_COLUMNS = [
 type SelectBody = {
   project_id?: unknown;
   spreadsheet_id?: unknown;
+  spreadsheet_name?: unknown;
   sheet_name?: unknown;
 };
+
+/**
+ * Best-effort lookup of a spreadsheet's title via the Drive metadata API.
+ * Used only when the client didn't pass spreadsheet_name (older callers, or
+ * direct API use). Non-fatal — any failure returns null so the caller can
+ * still persist a successful validation with spreadsheet_name=null.
+ */
+async function fetchSpreadsheetName(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<string | null> {
+  try {
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      spreadsheetId
+    )}?fields=name`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { name?: string };
+    return typeof data.name === "string" && data.name.length > 0
+      ? data.name
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,6 +82,11 @@ export async function POST(req: NextRequest) {
       typeof body.project_id === "string" ? body.project_id : null;
     const spreadsheetId =
       typeof body.spreadsheet_id === "string" ? body.spreadsheet_id : null;
+    const spreadsheetNameInput =
+      typeof body.spreadsheet_name === "string" &&
+      body.spreadsheet_name.trim().length > 0
+        ? body.spreadsheet_name.trim()
+        : null;
     const sheetName =
       typeof body.sheet_name === "string" && body.sheet_name.length > 0
         ? body.sheet_name
@@ -194,9 +227,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Resolve the spreadsheet's display name: prefer the value the client
+    // already has from /list (cheap), fall back to Drive metadata (one extra
+    // request, only on cold paths or direct API callers).
+    const spreadsheetName =
+      spreadsheetNameInput ??
+      (await fetchSpreadsheetName(accessToken, spreadsheetId));
+
     const mergedConfig = {
       ...config,
       spreadsheet_id: spreadsheetId,
+      spreadsheet_name: spreadsheetName,
       sheet_name: sheetName ?? null,
       validated_at: new Date().toISOString(),
     };

@@ -9,27 +9,15 @@ import { useActiveProject } from "@/hooks/use-active-project";
 import { useGlobalPeriod } from "@/hooks/use-global-period";
 import { useMetaOverview } from "@/hooks/use-meta-overview";
 import { useMetaAnalytics } from "@/hooks/use-meta-analytics";
+import { useSalesAnalytics } from "@/hooks/use-sales-analytics";
 import { META_SYNC_COMPLETED } from "@/lib/meta/events";
 import SalesAdsetSection from "@/components/sales/sales-adset-section";
+import RecentOrdersSection from "@/components/sales/recent-orders-section";
 
 const KPIS_MANUAL = [
   { label: "Revenue", value: "$0", note: "Manual orders" },
   { label: "Orders", value: "0", note: "0 today" },
   { label: "AOV", value: "$0", note: "Across manual entries" },
-];
-
-const ORDER_COLS = [
-  "Order ID",
-  "Date",
-  "Customer",
-  "Product",
-  "Revenue",
-  "Sales Source",
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_content",
-  "utm_term",
 ];
 
 const ORDER_COLS_MANUAL = [
@@ -39,11 +27,6 @@ const ORDER_COLS_MANUAL = [
   "Product",
   "Revenue",
   "Notes",
-];
-
-const SOURCE_TABS_FULL = [
-  { id: "shopify", label: "Shopify" },
-  { id: "manual", label: "Manual" },
 ];
 
 export default function SalesPage() {
@@ -197,6 +180,19 @@ function cpaSales(spend: number, purchases: number): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+function fmtDiff(pct: number | null): string {
+  if (pct === null || !Number.isFinite(pct)) return "—";
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+function diffColor(pct: number | null): string {
+  // Neutral within ±5% — typical noise on small-window ROAS ratios. Outside
+  // that the user wants the lift/regression to jump out visually.
+  if (pct === null || !Number.isFinite(pct)) return "text-zinc-500";
+  if (Math.abs(pct) < 5) return "text-zinc-300";
+  return pct > 0 ? "text-emerald-300" : "text-rose-300";
+}
+
 // Comparison-table columns. Chevron is rendered as a separate leading
 // cell (not in this list) so `colSpan={COMPARE_LEN}` on the drill-down
 // row matches the data columns exactly.
@@ -221,6 +217,10 @@ function SalesFull() {
 
   const overview = useMetaOverview(projectId);
   const analytics = useMetaAnalytics(projectId, {
+    since: range.since,
+    until: range.until,
+  });
+  const sales = useSalesAnalytics(projectId, {
     since: range.since,
     until: range.until,
   });
@@ -264,18 +264,63 @@ function SalesFull() {
   }
 
   const currency =
-    analytics.adAccounts[0]?.currency ?? project.currency ?? "USD";
+    sales.summary.currency ??
+    analytics.adAccounts[0]?.currency ??
+    project.currency ??
+    "USD";
 
-  // KPI cards. Only BUDGET is wired to live data this stage; the other
-  // four stay placeholders because there's still no attribution source.
-  const KPIS = [
-    { label: "Revenue", value: "$0", note: "0 orders" },
-    { label: "Orders", value: "0", note: "0 today" },
-    { label: "AOV", value: "$0", note: "Across all sources" },
-    { label: "Real ROAS", value: "0.0x", note: "vs Meta 0.0x" },
+  // KPI cards. SPEND is sourced from Meta; REVENUE/ORDERS/AOV from the
+  // orders table; Real ROAS is the hybrid revenue/spend ratio per the
+  // platform philosophy doc (Stage 22 brief).
+  const salesLoading = sales.status === "loading" || sales.status === "idle";
+  const totalRevenue = sales.summary.total_revenue;
+  const totalOrders = sales.summary.total_orders;
+  const aov = sales.summary.aov;
+  const metaSpend = analytics.summary.spend;
+  const realRoas =
+    metaSpend > 0 && totalRevenue > 0 ? totalRevenue / metaSpend : null;
+  const metaRoas = analytics.summary.roas;
+
+  const noOrdersNote = "No sales data yet. Connect Google Sheets.";
+
+  const KPIS: Array<{ label: string; value: string; note: string }> = [
+    {
+      label: "Revenue",
+      value: salesLoading ? "…" : fmtMoneySales(currency, totalRevenue),
+      note:
+        totalOrders === 0 && !salesLoading
+          ? noOrdersNote
+          : `${fmtIntSales(totalOrders)} orders`,
+    },
+    {
+      label: "Orders",
+      value: salesLoading ? "…" : fmtIntSales(totalOrders),
+      note:
+        totalOrders === 0 && !salesLoading
+          ? noOrdersNote
+          : `${fmtIntSales(sales.summary.matched_orders)} matched · ${fmtIntSales(
+              sales.summary.unmatched_orders
+            )} unmatched`,
+    },
+    {
+      label: "AOV",
+      value: salesLoading ? "…" : fmtMoneySales(currency, aov),
+      note:
+        totalOrders === 0 && !salesLoading
+          ? noOrdersNote
+          : "Across all orders in the period",
+    },
+    {
+      label: "Real ROAS",
+      value: salesLoading ? "…" : fmtRoasSales(realRoas),
+      note:
+        totalRevenue > 0 && metaSpend === 0
+          ? "No Meta spend in this period"
+          : `vs Meta ${fmtRoasSales(metaRoas)}`,
+    },
     {
       label: "Budget",
-      value: fmtMoneySales(currency, analytics.summary.spend),
+      value: fmtMoneySales(currency, metaSpend),
       note: "Total spend for the period",
     },
   ];
@@ -406,6 +451,19 @@ function SalesFull() {
                 campaigns.map((c) => {
                   const isOpen = expandedCampaigns.has(c.id);
                   const cpaVal = cpaSales(c.spend, c.purchases);
+                  const realAgg = sales.perCampaign[c.id] ?? null;
+                  const realRev = realAgg?.revenue ?? null;
+                  const realOrders = realAgg?.orders ?? null;
+                  const realCpa =
+                    realAgg && realAgg.orders > 0
+                      ? c.spend / realAgg.orders
+                      : null;
+                  const realRoasC =
+                    realAgg && c.spend > 0 ? realAgg.revenue / c.spend : null;
+                  const diffPct =
+                    realRoasC !== null && c.roas !== null && c.roas > 0
+                      ? ((realRoasC - c.roas) / c.roas) * 100
+                      : null;
                   return (
                     <SalesRowGroup key={c.id}>
                       <tr className="border-t border-[#1B2238] hover:bg-white/[0.02] transition">
@@ -453,30 +511,35 @@ function SalesFull() {
                         <td className="px-3 py-3 text-right text-zinc-200">
                           {fmtMoneySales(currency, c.revenue)}
                         </td>
-                        <td className="px-3 py-3 text-right text-zinc-500">
-                          —
+                        <td className="px-3 py-3 text-right text-white font-medium">
+                          {fmtMoneySales(currency, realRev)}
                         </td>
                         <td className="px-3 py-3 text-right text-zinc-200">
                           {fmtIntSales(c.purchases)}
                         </td>
-                        <td className="px-3 py-3 text-right text-zinc-500">
-                          —
+                        <td className="px-3 py-3 text-right text-white font-medium">
+                          {realOrders === null
+                            ? "—"
+                            : fmtIntSales(realOrders)}
                         </td>
                         <td className="px-3 py-3 text-right text-zinc-200">
                           {fmtMoneySales(currency, cpaVal)}
                         </td>
-                        <td className="px-3 py-3 text-right text-zinc-500">
-                          —
+                        <td className="px-3 py-3 text-right text-white font-medium">
+                          {fmtMoneySales(currency, realCpa)}
                         </td>
                         <td className="px-3 py-3 text-right text-zinc-200">
                           {fmtRoasSales(c.roas)}
                         </td>
-                        <td className="px-3 py-3 text-right text-zinc-500">
-                          —
+                        <td className="px-3 py-3 text-right text-white font-medium">
+                          {fmtRoasSales(realRoasC)}
                         </td>
-                        {/* DIFF is null until a real-side source exists. */}
-                        <td className="px-3 py-3 text-right text-zinc-500">
-                          —
+                        <td
+                          className={`px-3 py-3 text-right font-medium ${diffColor(
+                            diffPct
+                          )}`}
+                        >
+                          {fmtDiff(diffPct)}
                         </td>
                       </tr>
                       {isOpen && (
@@ -543,83 +606,16 @@ function SalesFull() {
         </div>
       </section>
 
-      <section className="border border-[#1B2238] rounded-2xl bg-[#0B1020] overflow-hidden">
-
-        <div className="px-6 py-4 border-b border-[#1B2238] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {SOURCE_TABS_FULL.map((t, i) => (
-              <button
-                key={t.id}
-                className={
-                  i === 0
-                    ? "h-8 px-3 rounded-lg text-xs border border-[#6D5EF8] bg-[#6D5EF8]/15 text-white transition"
-                    : "h-8 px-3 rounded-lg text-xs border border-[#1B2238] hover:border-zinc-700 text-zinc-300 transition"
-                }
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 text-xs text-zinc-500">
-              <span>
-                Revenue: <span className="text-white">$0</span>
-              </span>
-              <span className="text-zinc-700">·</span>
-              <span>
-                Orders: <span className="text-white">0</span>
-              </span>
-            </div>
-            <button className="h-8 px-3 rounded-lg text-xs border border-[#1B2238] hover:border-zinc-700 text-zinc-300 transition">
-              Connect new source
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1200px]">
-            <thead className="text-[10px] text-zinc-500 uppercase tracking-wider bg-black/30">
-              <tr>
-                {ORDER_COLS.map((c, i) => (
-                  <th
-                    key={c}
-                    className={
-                      i === 0
-                        ? "text-left px-6 py-3 font-medium"
-                        : "text-left px-3 py-3 font-medium"
-                    }
-                  >
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td
-                  colSpan={ORDER_COLS.length}
-                  className="text-center px-6 py-12 text-zinc-500 text-sm"
-                >
-                  No orders yet. Add a manual order or connect Shopify to import them.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="px-6 py-3 border-t border-[#1B2238] flex items-center justify-between text-xs text-zinc-500">
-          <span>Showing 0 of 0</span>
-          <div className="flex items-center gap-1">
-            <button disabled className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50">
-              Prev
-            </button>
-            <button disabled className="h-7 px-2 rounded-md border border-[#1B2238] disabled:opacity-50">
-              Next
-            </button>
-          </div>
-        </div>
-      </section>
+      <RecentOrdersSection
+        projectId={projectId}
+        loading={sales.status === "loading" || sales.status === "idle"}
+        error={sales.error}
+        orders={sales.recentOrders}
+        matchedCount={sales.summary.matched_orders}
+        unmatchedCount={sales.summary.unmatched_orders}
+        manualCount={sales.summary.manual_orders}
+        onRematched={sales.refresh}
+      />
 
     </div>
   );

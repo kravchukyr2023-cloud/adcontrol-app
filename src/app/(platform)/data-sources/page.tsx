@@ -13,6 +13,7 @@ import ConnectMetaButton from "@/components/meta/connect-meta-button";
 import DisconnectMetaModal from "@/components/meta/disconnect-meta-modal";
 import ProjectBmSection from "@/components/meta/project-bm-section";
 import AddBmModal from "@/components/meta/add-bm-modal";
+import GoogleSheetsCard from "@/components/google/google-sheets-card";
 
 type SecondarySource = {
   name: string;
@@ -22,6 +23,9 @@ type SecondarySource = {
   feature: FeatureId;
 };
 
+// Google Sheets has its own first-class card (GoogleSheetsCard) below the
+// Meta card. The placeholder grid only carries connectors that aren't built
+// out yet.
 const SECONDARY_SOURCES: SecondarySource[] = [
   {
     name: "Manual Orders",
@@ -29,13 +33,6 @@ const SECONDARY_SOURCES: SecondarySource[] = [
     icon: "M",
     iconBg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
     feature: "manual_orders",
-  },
-  {
-    name: "Google Sheets",
-    description: "Pull orders or attribution from your operational sheet.",
-    icon: "G",
-    iconBg: "bg-amber-500/15 border-amber-500/30 text-amber-300",
-    feature: "google_sheets",
   },
   {
     name: "Shopify",
@@ -71,6 +68,11 @@ export default function DataSourcesPage() {
       </div>
 
       <MetaAdsCard
+        projectId={project?.id ?? null}
+        projectName={project?.name ?? null}
+      />
+
+      <GoogleSheetsCard
         projectId={project?.id ?? null}
         projectName={project?.name ?? null}
       />

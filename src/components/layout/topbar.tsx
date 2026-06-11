@@ -30,6 +30,9 @@ export default function Topbar() {
   const projectId = project?.id ?? null;
   const { preset, setPreset, customRange, setCustomRange } = useGlobalPeriod();
   const sync = useMetaSync(projectId);
+  // Tracks the post-Meta Google sync. Combined with sync.state to drive
+  // the button's spinner so the user sees one continuous loading state.
+  const [googleSyncing, setGoogleSyncing] = useState(false);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   // Remembers the preset the user was on before opening the picker —
@@ -59,14 +62,32 @@ export default function Topbar() {
   // /api/meta/last-sync endpoint. Skipped earlier to keep the
   // surface minimal until the data source is finalised.
   const handleSync = async () => {
-    if (!projectId || sync.state === "syncing") return;
+    if (!projectId || sync.state === "syncing" || googleSyncing) return;
     const r = await sync.trigger();
+
+    // Best-effort Google Sheets sync after Meta. The endpoint returns:
+    //   - 404 if the project has no Google source (silent skip)
+    //   - 4xx/5xx on token/access errors (the card already surfaces them)
+    // We never block the Meta-sync result on Google — partial-meta + ok-
+    // google still emits SYNC_COMPLETED so analytics refetch.
     if (r.state === "success" || r.state === "partial") {
+      setGoogleSyncing(true);
+      try {
+        await fetch("/api/google/sheets/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: projectId }),
+        }).catch(() => null);
+      } finally {
+        setGoogleSyncing(false);
+      }
+      // Single completion event covers Meta + Google. /sales and
+      // /dashboard listen for this to refetch their analytics hooks.
       emitMetaSyncCompleted();
     }
   };
 
-  const syncing = sync.state === "syncing";
+  const syncing = sync.state === "syncing" || googleSyncing;
   const syncDisabled = !projectId || syncing;
 
   const openPickerFromSelect = (fromPreset: DatePreset) => {

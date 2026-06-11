@@ -1,32 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSupabase } from "@/server/meta/admin-supabase";
 import { syncProject } from "@/server/meta/sync-project";
+import { syncGoogleSheetsSource } from "@/server/sheets/sync-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
+ * Hobby plan budgets — 60s function ceiling. Reserve ~10s of headroom
+ * for the Google loop so a slow Meta run doesn't starve sales sync.
+ * Past the soft deadline we skip the Google loop entirely and rely on
+ * tomorrow's cron — better than half-syncing some users.
+ */
+const TOTAL_BUDGET_MS = 55_000;
+const GOOGLE_SOFT_DEADLINE_MS = 50_000;
+const MAX_GOOGLE_SOURCES_PER_RUN = 20;
+
+/**
  * GET /api/cron/sync-all
  *
- * Vercel Cron entry point. Iterates every user with an active Meta
- * connection and runs syncProject() for each of their projects.
+ * Vercel Cron entry point. Two passes:
+ *   1. Meta sync — iterates every user with an active Meta connection
+ *      and runs syncProject() for each of their projects.
+ *   2. Google Sheets sync — iterates every `sales_sources` row that has
+ *      source_type='google_sheets', status='active', and a configured
+ *      spreadsheet_id, and runs syncGoogleSheetsSource() per row.
  *
  * Auth: shared-secret bearer in the Authorization header. The check
  * runs FIRST — before any SQL — so an unauthenticated probe never
  * reaches the database.
  *
- * Failure isolation: per-user try/catch + per-project try/catch.
- * One user's broken connection or one syncProject exception must
- * not stop the rest of the run.
+ * Failure isolation: per-user / per-project / per-source try/catch.
+ * One broken connection must not stop the rest of the run.
  *
  * Response shape is intentionally aggregate-only: counts + duration.
- * No tokens, secrets, or per-AA payloads are returned — the response
+ * No tokens, secrets, or per-source payloads are returned — the response
  * may be visible in Vercel's cron-run UI / logs.
  *
  * Hobby-tier note: vercel.json schedules this daily at 06:00 UTC
- * (Hobby is capped at 1 cron/day). Moving to Pro is a vercel.json
- * change only — this handler is already idempotent and budgeted
- * for the 60s function ceiling.
+ * (Hobby is capped at 1 cron/day). The Google loop is capped at
+ * `MAX_GOOGLE_SOURCES_PER_RUN` sources and soft-deadlines at
+ * `GOOGLE_SOFT_DEADLINE_MS` so the function can return cleanly even
+ * on a slow Meta run.
  */
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
@@ -140,9 +155,95 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Pass 2: Google Sheets sync.
+  // Runs after Meta so the Stage 21 attribution matcher (kicked off
+  // inside syncGoogleSheetsSource) sees the freshly-synced Meta
+  // entities. Soft-deadlines on the wall clock — never blocks the
+  // function from returning.
+  // -----------------------------------------------------------------
+  let googleAttempted = 0;
+  let googleSuccess = 0;
+  let googleErrors = 0;
+  let googleSkippedBudget = 0;
+  let googleSkippedNoSheet = 0;
+
+  if (Date.now() - startMs >= GOOGLE_SOFT_DEADLINE_MS) {
+    console.log(
+      `[cron] google loop skipped — Meta consumed ${Date.now() - startMs}ms (budget ${GOOGLE_SOFT_DEADLINE_MS}ms)`
+    );
+  } else {
+    const { data: sourceRows, error: sourceErr } = await sb
+      .from("sales_sources")
+      .select("id, user_id, source_config")
+      .eq("source_type", "google_sheets")
+      .eq("status", "active")
+      .order("last_sync_at", { ascending: true, nullsFirst: true })
+      .limit(MAX_GOOGLE_SOURCES_PER_RUN);
+
+    if (sourceErr) {
+      console.error(
+        `[cron] google sales_sources lookup failed: ${sourceErr.message}`
+      );
+    } else {
+      const sources = (sourceRows ?? []) as Array<{
+        id: string;
+        user_id: string;
+        source_config: Record<string, unknown> | null;
+      }>;
+
+      for (const src of sources) {
+        if (Date.now() - startMs >= GOOGLE_SOFT_DEADLINE_MS) {
+          googleSkippedBudget += sources.length - googleAttempted;
+          console.log(
+            `[cron] google loop deadline hit after ${googleAttempted} sources — ${googleSkippedBudget} skipped`
+          );
+          break;
+        }
+        if (Date.now() - startMs >= TOTAL_BUDGET_MS) break;
+
+        const spreadsheetId =
+          typeof src.source_config?.spreadsheet_id === "string"
+            ? src.source_config.spreadsheet_id
+            : null;
+        if (!spreadsheetId) {
+          // Connected but the user never picked a sheet — not an error,
+          // just nothing to sync yet.
+          googleSkippedNoSheet++;
+          continue;
+        }
+
+        googleAttempted++;
+        try {
+          const outcome = await syncGoogleSheetsSource({
+            userId: src.user_id,
+            salesSourceId: src.id,
+          });
+          if (outcome.ok) {
+            googleSuccess++;
+            console.log(
+              `[cron] google source=${src.id} status=ok rows=${outcome.total_rows} inserted=${outcome.inserted} updated=${outcome.updated} skipped=${outcome.skipped}`
+            );
+          } else {
+            googleErrors++;
+            console.log(
+              `[cron] google source=${src.id} status=${outcome.status} error=${outcome.error ?? "—"}`
+            );
+          }
+        } catch (err) {
+          googleErrors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[cron] google source=${src.id} status=exception msg=${msg}`
+          );
+        }
+      }
+    }
+  }
+
   const durationMs = Date.now() - startMs;
   console.log(
-    `[cron] done users=${userIds.length} projects=${totalProjects} success=${successCount} failed=${failedCount} duration=${durationMs}ms`
+    `[cron] done users=${userIds.length} projects=${totalProjects} meta_success=${successCount} meta_failed=${failedCount} google_attempted=${googleAttempted} google_success=${googleSuccess} google_errors=${googleErrors} google_skipped_budget=${googleSkippedBudget} google_skipped_nosheet=${googleSkippedNoSheet} duration=${durationMs}ms`
   );
 
   return NextResponse.json({
@@ -150,6 +251,13 @@ export async function GET(req: NextRequest) {
     total_projects: totalProjects,
     success_count: successCount,
     failed_count: failedCount,
+    google: {
+      attempted: googleAttempted,
+      success: googleSuccess,
+      errors: googleErrors,
+      skipped_budget: googleSkippedBudget,
+      skipped_no_sheet: googleSkippedNoSheet,
+    },
     duration_ms: durationMs,
   });
 }

@@ -1,28 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabase, getServerUserId } from "@/lib/supabase/server";
-import { getAdminSupabase } from "@/server/meta/admin-supabase";
-import { refreshGoogleToken } from "@/lib/google/oauth";
 import {
-  getSheetRows,
-  GoogleSheetsAuthError,
-  GoogleSheetsForbiddenError,
-  GoogleSheetsNotFoundError,
-} from "@/lib/google/sheets";
-import { parseSheetRows, type RowError } from "@/server/sheets/parse-rows";
-import { upsertOrders } from "@/server/sheets/upsert-orders";
-import { matchOrders, type MatchResult } from "@/server/attribution/match-orders";
+  syncGoogleSheetsSource,
+  statusToHttpCode,
+} from "@/server/sheets/sync-source";
 import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Hobby plan tops out at 60s; the API + parse + upsert path needs headroom,
-// so we cap the per-sync row count and surface a "truncated" flag in the
-// response. Stage 19 is a manual-trigger sync, so partial coverage is fine.
-const MAX_SYNC_ROWS = 1000;
-
 type Body = { project_id?: unknown };
 
+/**
+ * Thin HTTP wrapper around `syncGoogleSheetsSource`. The endpoint exists
+ * for two callers:
+ *   - Data Sources "Sync now" button (Stage 19)
+ *   - global topbar Sync button   (Stage 20, fire-and-forget after Meta)
+ *
+ * The cron job (Stage 20) calls `syncGoogleSheetsSource` directly without
+ * going through HTTP. This wrapper only handles auth + ownership + the
+ * outcome → HTTP-shape translation.
+ */
 export async function POST(req: NextRequest) {
   try {
     const userId = await getServerUserId();
@@ -62,232 +60,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const admin = getAdminSupabase();
-    const { data: source, error: srcErr } = await admin
-      .from("sales_sources")
-      .select("id, source_config, status")
-      .eq("project_id", projectId)
-      .eq("source_type", "google_sheets")
-      .maybeSingle();
+    const outcome = await syncGoogleSheetsSource({ userId, projectId });
+    const httpCode = statusToHttpCode(outcome.status);
 
-    if (srcErr) {
-      console.error(`[google/sheets/sync] sales_sources lookup: ${srcErr.message}`);
-      return NextResponse.json({ error: "DB error" }, { status: 500 });
-    }
-    if (!source) {
-      return NextResponse.json(
-        { error: "Google Sheets not connected" },
-        { status: 404 }
-      );
-    }
-
-    const config = (source.source_config as Record<string, unknown>) ?? {};
-    const refreshToken =
-      typeof config.refresh_token === "string" ? config.refresh_token : null;
-    const spreadsheetId =
-      typeof config.spreadsheet_id === "string" ? config.spreadsheet_id : null;
-    const sheetName =
-      typeof config.sheet_name === "string" && config.sheet_name.length > 0
-        ? config.sheet_name
-        : undefined;
-
-    if (!refreshToken) {
-      return NextResponse.json(
-        { error: "Google Sheets not connected" },
-        { status: 404 }
-      );
-    }
-    if (!spreadsheetId) {
-      return NextResponse.json(
-        { error: "No validated spreadsheet. Pick a spreadsheet first." },
-        { status: 400 }
-      );
-    }
-
-    const sourceId = source.id as string;
-    const startedAtIso = new Date().toISOString();
-
-    // Mark the sync attempt — distinguishes "sync started but token refresh
-    // failed" from "never tried" in the UI.
-    await admin
-      .from("sales_sources")
-      .update({ last_sync_at: startedAtIso })
-      .eq("id", sourceId);
-
-    // --- Token refresh ------------------------------------------------
-    let accessToken: string;
-    try {
-      const refreshed = await refreshGoogleToken(refreshToken);
-      accessToken = refreshed.access_token;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Token refresh failed";
-      console.warn(`[google/sheets/sync] token refresh failed: ${msg}`);
-      await markError(sourceId, "Connection expired. Please reconnect.");
-      return NextResponse.json(
-        { error: "Connection expired. Please reconnect." },
-        { status: 401 }
-      );
-    }
-
-    // --- Read rows ----------------------------------------------------
-    let rows: string[][];
-    try {
-      rows = await getSheetRows(accessToken, spreadsheetId, sheetName);
-    } catch (err) {
-      if (err instanceof GoogleSheetsNotFoundError) {
-        await markError(
-          sourceId,
-          "Spreadsheet not found. It may have been deleted."
-        );
-        return NextResponse.json(
-          { error: "Spreadsheet not found" },
-          { status: 404 }
-        );
-      }
-      if (err instanceof GoogleSheetsForbiddenError) {
-        await markError(
-          sourceId,
-          "Access denied. Re-share the spreadsheet with the connected Google account."
-        );
-        return NextResponse.json(
-          { error: "Access denied" },
-          { status: 403 }
-        );
-      }
-      if (err instanceof GoogleSheetsAuthError) {
-        await markError(sourceId, "Connection expired. Please reconnect.");
-        return NextResponse.json(
-          { error: "Connection expired. Please reconnect." },
-          { status: 401 }
-        );
-      }
-      const msg = err instanceof Error ? err.message : "Read failed";
-      await markError(sourceId, `Sheets read failed: ${msg}`);
-      return NextResponse.json({ error: msg }, { status: 500 });
-    }
-
-    const totalRows = rows.length;
-    let truncated = false;
-    let workingRows = rows;
-    if (totalRows > MAX_SYNC_ROWS) {
-      truncated = true;
-      workingRows = rows.slice(0, MAX_SYNC_ROWS);
-    }
-
-    // --- Parse + upsert -----------------------------------------------
-    const { valid, errors } = parseSheetRows(workingRows);
-
-    // Empty spreadsheet is a happy case, not an error.
-    if (totalRows === 0) {
-      await markSuccess(sourceId);
-      return NextResponse.json({
-        ok: true,
-        total_rows: 0,
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        errors: [],
-        truncated: false,
-        message: "No orders found in spreadsheet.",
-      });
-    }
-
-    // Every data row failed validation → surface as an error state so the
-    // UI prompts the user to fix the template.
-    if (valid.length === 0 && errors.length > 0) {
-      const summary = errors
-        .slice(0, 3)
-        .map((e) => `row ${e.rowIndex}: ${e.reason}`)
-        .join("; ");
-      await markError(
-        sourceId,
-        `All rows failed validation. ${summary}${
-          errors.length > 3 ? ` (+${errors.length - 3} more)` : ""
-        }`
-      );
+    // Error-style HTTP codes get the `{error: ...}` shape the UI already
+    // handles; successful (200) responses carry the full outcome.
+    if (httpCode === 200) {
       return NextResponse.json(
         {
-          ok: false,
-          total_rows: totalRows,
-          inserted: 0,
-          updated: 0,
-          skipped: errors.length,
-          errors: errors.slice(0, 10),
-          truncated,
+          ok: outcome.ok,
+          total_rows: outcome.total_rows,
+          inserted: outcome.inserted,
+          updated: outcome.updated,
+          skipped: outcome.skipped,
+          errors: outcome.errors,
+          truncated: outcome.truncated,
+          attribution: outcome.attribution,
+          ...(outcome.message ? { message: outcome.message } : {}),
+          ...(outcome.error ? { error: outcome.error } : {}),
         },
         { status: 200 }
       );
     }
-
-    let upsertResult;
-    try {
-      upsertResult = await upsertOrders({
-        userId,
-        projectId,
-        salesSourceId: sourceId,
-        orders: valid,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upsert failed";
-      console.error(`[google/sheets/sync] upsert failed: ${msg}`);
-      await markError(sourceId, `Failed to save orders: ${msg}`);
-      return NextResponse.json({ error: msg }, { status: 500 });
-    }
-
-    // Partial DB failures count as warnings but still mark the source healthy
-    // if any rows persisted — same model as the Meta sync path.
-    if (
-      upsertResult.errors.length > 0 &&
-      upsertResult.inserted === 0 &&
-      upsertResult.updated === 0
-    ) {
-      await markError(
-        sourceId,
-        `Failed to save orders: ${upsertResult.errors[0]}`
-      );
-      return NextResponse.json(
-        {
-          ok: false,
-          total_rows: totalRows,
-          inserted: 0,
-          updated: 0,
-          skipped: errors.length,
-          errors: errors.slice(0, 10),
-          truncated,
-        },
-        { status: 500 }
-      );
-    }
-
-    await markSuccess(sourceId);
-
-    // Attribution runs AFTER orders are persisted. Failure here is non-fatal:
-    // the orders are saved, the user just has to re-trigger matching via
-    // /api/attribution/rematch (or a future cron).
-    let attribution: MatchResult | null = null;
-    try {
-      attribution = await matchOrders({ userId, projectId });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[google/sheets/sync] attribution failed: ${msg}`);
-      attribution = null;
-    }
-
-    return NextResponse.json({
-      ok: true,
-      total_rows: totalRows,
-      inserted: upsertResult.inserted,
-      updated: upsertResult.updated,
-      skipped: errors.length,
-      errors: errors.slice(0, 10) satisfies RowError[],
-      truncated,
-      attribution,
-      ...(truncated
-        ? {
-            message: `Synced first ${MAX_SYNC_ROWS} rows of ${totalRows}. Re-run sync to ingest the rest.`,
-          }
-        : {}),
-    });
+    return NextResponse.json(
+      { error: outcome.error ?? "Sync failed" },
+      { status: httpCode }
+    );
   } catch (err) {
     if (isMissingEnvError(err)) {
       console.error(`[google/sheets/sync] ${err.message}`);
@@ -300,30 +98,4 @@ export async function POST(req: NextRequest) {
     console.error(`[google/sheets/sync] ${msg}`);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-async function markError(sourceId: string, message: string): Promise<void> {
-  const admin = getAdminSupabase();
-  await admin
-    .from("sales_sources")
-    .update({
-      status: "error",
-      last_error: message,
-      last_error_at: new Date().toISOString(),
-    })
-    .eq("id", sourceId);
-}
-
-async function markSuccess(sourceId: string): Promise<void> {
-  const admin = getAdminSupabase();
-  const now = new Date().toISOString();
-  await admin
-    .from("sales_sources")
-    .update({
-      status: "active",
-      last_successful_sync_at: now,
-      last_error: null,
-      last_error_at: null,
-    })
-    .eq("id", sourceId);
 }

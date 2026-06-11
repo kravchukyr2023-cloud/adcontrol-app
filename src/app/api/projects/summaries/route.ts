@@ -10,15 +10,20 @@ export const maxDuration = 30;
 /**
  * GET /api/projects/summaries
  *
- * Aggregates this-month (UTC) Meta spend / purchases / revenue per
- * project for the authenticated user, alongside whether the project
- * currently has a live Meta data path (active selection → active BM
- * membership → active meta_connection).
+ * Aggregates this-month (UTC) actuals per project for the authenticated
+ * user, alongside whether the project currently has a live Meta data path
+ * (active selection → active BM membership → active meta_connection).
  *
- * Data is read from our DB (`meta_ad_account_insights`), NOT from
- * the Meta API. Daily insights for all of a user's bound AAs are
- * pulled in a single query and aggregated client-side; for a typical
- * user with ≤ 10 projects × 30 days, this is well under 1000 rows.
+ * Field provenance (Stage 23 hybrid philosophy):
+ *   - actualSpend     ← meta_ad_account_insights.spend (Meta side)
+ *   - actualPurchases ← meta_ad_account_insights.purchases (Meta side)
+ *   - actualRevenue   ← orders.revenue (Stage 19 ingest, Stage 22+ hybrid)
+ *   - actualRoas      ← actualRevenue / actualSpend (hybrid)
+ *
+ * Data is read from our DB, never the Meta API. Daily insights for all of
+ * a user's bound AAs and all orders in the month are pulled in two flat
+ * queries and aggregated client-side; for a typical user with ≤ 10 projects
+ * × 30 days, this is well under 1000 rows.
  *
  * Scope:
  *   - Period is hard-coded to "this month" (UTC). The global topbar
@@ -141,7 +146,11 @@ export async function GET() {
   }
 
   // 3. Daily insights for every distinct AA across all projects, in
-  //    one query. We aggregate per project in JS afterwards.
+  //    one query. We aggregate per project in JS afterwards. NOTE we
+  //    deliberately keep selecting `revenue` from Meta even though
+  //    nothing on these cards uses it any more — leaving it untouched
+  //    means the Meta backfill (Stage 12) still feeds the META REV
+  //    column on /sales (Stage 14) without a second query path.
   const allAaUuids = Array.from(
     new Set(
       Array.from(projectAaMap.values()).flatMap((s) => Array.from(s))
@@ -150,13 +159,13 @@ export async function GET() {
 
   const { since, until } = thisMonthRangeUtc();
 
-  type InsightTotal = { spend: number; purchases: number; revenue: number };
+  type InsightTotal = { spend: number; purchases: number };
   const perAaTotals = new Map<string, InsightTotal>();
 
   if (allAaUuids.length > 0) {
     const { data: insightRows, error: insErr } = await sb
       .from("meta_ad_account_insights")
-      .select("meta_ad_account_id_fk, spend, purchases, revenue")
+      .select("meta_ad_account_id_fk, spend, purchases")
       .eq("user_id", userId)
       .gte("date", since)
       .lte("date", until)
@@ -174,39 +183,71 @@ export async function GET() {
       meta_ad_account_id_fk: string | null;
       spend: number | string | null;
       purchases: number | null;
-      revenue: number | string | null;
     }>) {
       const aaUuid = r.meta_ad_account_id_fk;
       if (!aaUuid) continue;
       const entry = perAaTotals.get(aaUuid) ?? {
         spend: 0,
         purchases: 0,
-        revenue: 0,
       };
       // numeric() columns come back as strings from PostgREST; Number()
       // coerces both that and bare numbers safely.
       entry.spend += Number(r.spend ?? 0);
       entry.purchases += Number(r.purchases ?? 0);
-      entry.revenue += Number(r.revenue ?? 0);
       perAaTotals.set(aaUuid, entry);
     }
   }
 
-  // 4. Roll up to project level.
+  // 3b. Real revenue: one flat scan of `orders` for the month, grouped
+  //     by project_id in JS. RLS already restricts to the user's rows.
+  //     We do NOT join through sales_sources / bindings — orders are
+  //     directly project-scoped via orders.project_id.
+  const projectRevenue = new Map<string, number>();
+  {
+    const { data: orderRows, error: ordErr } = await sb
+      .from("orders")
+      .select("project_id, revenue")
+      .eq("user_id", userId)
+      .gte("order_date", since)
+      .lte("order_date", until);
+
+    if (ordErr) {
+      console.error(`[summaries] orders lookup: ${ordErr.message}`);
+      return NextResponse.json(
+        { error: "DB error loading orders" },
+        { status: 500 }
+      );
+    }
+
+    for (const r of (orderRows ?? []) as Array<{
+      project_id: string;
+      revenue: number | string | null;
+    }>) {
+      const rev = Number(r.revenue ?? 0);
+      if (!Number.isFinite(rev)) continue;
+      projectRevenue.set(
+        r.project_id,
+        (projectRevenue.get(r.project_id) ?? 0) + rev
+      );
+    }
+  }
+
+  // 4. Roll up to project level. actualRevenue is sourced from orders
+  //    (NOT meta_ad_account_insights.revenue); actualRoas is the hybrid
+  //    ratio. Spend + purchases stay on the Meta side.
   const summaries: Summary[] = projects.map((p) => {
     const aaSet = projectAaMap.get(p.id);
     let spend = 0;
     let purchases = 0;
-    let revenue = 0;
     if (aaSet) {
       for (const aaUuid of aaSet) {
         const t = perAaTotals.get(aaUuid);
         if (!t) continue;
         spend += t.spend;
         purchases += t.purchases;
-        revenue += t.revenue;
       }
     }
+    const revenue = projectRevenue.get(p.id) ?? 0;
     const roas = revenue > 0 && spend > 0 ? revenue / spend : 0;
     return {
       projectId: p.id,

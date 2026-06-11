@@ -6,6 +6,7 @@ import { useActiveProject } from "@/hooks/use-active-project";
 import { useGlobalPeriod } from "@/hooks/use-global-period";
 import { useMetaAnalytics } from "@/hooks/use-meta-analytics";
 import { useMetaOverview } from "@/hooks/use-meta-overview";
+import { useSalesAnalytics } from "@/hooks/use-sales-analytics";
 
 type Severity = "critical" | "warning" | "opportunity";
 
@@ -110,10 +111,17 @@ export default function DashboardPage() {
   const projectId = project?.id ?? null;
   const { range } = useGlobalPeriod();
 
-  // Hooks are unconditional. Both gracefully accept null projectId and
-  // park in `status: 'idle'` until a real project is picked.
+  // Hooks are unconditional. All three gracefully accept null projectId
+  // and park in `status: 'idle'` until a real project is picked.
   const overview = useMetaOverview(projectId);
   const analytics = useMetaAnalytics(projectId, {
+    since: range.since,
+    until: range.until,
+  });
+  // Sales pulls REAL revenue from `orders` (Stage 19 ingest + Stage 21
+  // attribution). Revenue + ROAS cards source from here per the Stage 23
+  // hybrid philosophy: spend stays Meta, revenue moves to orders.
+  const sales = useSalesAnalytics(projectId, {
     since: range.since,
     until: range.until,
   });
@@ -130,11 +138,15 @@ export default function DashboardPage() {
   );
 
   // Currency preference order:
-  //   analytics AA → project default → USD fallback.
-  // analytics.adAccounts is empty until the first fetch resolves; the
-  // project-level currency keeps first paint sensible.
+  //   orders dominant → analytics AA → project default → USD fallback.
+  // Orders dominant wins so the Revenue card uses the currency the user
+  // actually types into their sheet on cold paint, before analytics
+  // resolves.
   const currency =
-    analytics.adAccounts[0]?.currency ?? project?.currency ?? "USD";
+    sales.summary.currency ??
+    analytics.adAccounts[0]?.currency ??
+    project?.currency ??
+    "USD";
 
   // --- Full-page replacement: no active project selected ---
   if (!project) {
@@ -154,12 +166,20 @@ export default function DashboardPage() {
 
   const spend = analytics.summary.spend ?? 0;
   const purchases = analytics.summary.purchases ?? 0;
-  // Revenue stays sourced from Meta (always 0 until Shopify attribution
-  // lands in A3c). We still show it because the note line carries the
-  // monthly goal for plan-vs-actual context.
-  const revenue = analytics.summary.revenue ?? 0;
   const cpaVal = cpaSafe(spend, purchases);
-  const roasVal = analytics.summary.roas ?? 0;
+
+  // REVENUE + ROAS now come from `orders` (Stage 19 ingest). Real ROAS is
+  // the hybrid orders-revenue / Meta-spend ratio. The card honestly shows
+  // "—" when there are no orders yet; we deliberately do NOT fall back to
+  // Meta's analytics.summary.revenue / roas — the whole point of these
+  // cards is "Real", so a Meta fallback would mislead the user.
+  const salesLoading = sales.status === "loading" || sales.status === "idle";
+  const realRevenue = sales.summary.total_revenue;
+  const realOrders = sales.summary.total_orders;
+  const realRoasVal: number | null =
+    realRevenue > 0 && spend > 0 ? realRevenue / spend : null;
+
+  const noOrdersNote = "No sales data yet. Connect Google Sheets.";
 
   const KPIS = [
     {
@@ -169,8 +189,13 @@ export default function DashboardPage() {
     },
     {
       label: "Revenue",
-      value: fmt(currency, Math.round(revenue)),
-      note: `Goal ${fmt(currency, targetRevenue)}`,
+      value: salesLoading
+        ? "…"
+        : fmt(currency, Math.round(realRevenue)),
+      note:
+        realOrders === 0 && !salesLoading
+          ? noOrdersNote
+          : `Goal ${fmt(currency, targetRevenue)}`,
     },
     {
       label: "Purchases",
@@ -183,9 +208,14 @@ export default function DashboardPage() {
       note: `Target ${fmt(currency, targetCpa)}`,
     },
     {
-      label: "ROAS",
-      value: `${roasVal.toFixed(1)}x`,
-      note: `Target ${targetRoas ? targetRoas.toFixed(1) : "0.0"}x`,
+      label: "Real ROAS",
+      value: salesLoading ? "…" : fmtRoasOrDash(realRoasVal),
+      note:
+        realOrders === 0 && !salesLoading
+          ? "Connect Google Sheets for Real ROAS"
+          : realRevenue > 0 && spend === 0
+          ? "No Meta spend in this period"
+          : `Target ${targetRoas ? targetRoas.toFixed(1) : "0.0"}x`,
     },
   ];
 
@@ -396,7 +426,8 @@ export default function DashboardPage() {
                 <th className="text-left px-3 py-3 font-medium">Status</th>
                 <th className="text-right px-3 py-3 font-medium">Spend</th>
                 <th className="text-right px-3 py-3 font-medium">Purchases</th>
-                <th className="text-right px-3 py-3 font-medium">ROAS</th>
+                <th className="text-right px-3 py-3 font-medium">Meta ROAS</th>
+                <th className="text-right px-3 py-3 font-medium">Real ROAS</th>
                 <th className="text-right px-3 py-3 font-medium">CPA</th>
                 <th className="text-right px-3 py-3 font-medium">CTR</th>
                 <th className="text-right px-3 py-3 font-medium">CPC</th>
@@ -409,6 +440,9 @@ export default function DashboardPage() {
                     (c.effective_status && STATUS_BADGE[c.effective_status]) ||
                     "bg-zinc-500/10 border-zinc-500/30 text-zinc-300";
                   const cpaCampaign = cpaSafe(c.spend, c.purchases);
+                  const realAgg = sales.perCampaign[c.id] ?? null;
+                  const realRoasCampaign =
+                    realAgg && c.spend > 0 ? realAgg.revenue / c.spend : null;
                   return (
                     <tr
                       key={c.id}
@@ -438,6 +472,9 @@ export default function DashboardPage() {
                       <td className="px-3 py-3 text-right text-zinc-200">
                         {fmtRoasOrDash(c.roas)}
                       </td>
+                      <td className="px-3 py-3 text-right text-white font-medium">
+                        {fmtRoasOrDash(realRoasCampaign)}
+                      </td>
                       <td className="px-3 py-3 text-right text-zinc-200">
                         {fmtMoneyOrDash(
                           currency,
@@ -456,7 +493,7 @@ export default function DashboardPage() {
 
               {tableMode !== "ok" && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12">
+                  <td colSpan={9} className="px-6 py-12">
                     {tableMode === "loading" && (
                       <p className="text-center text-zinc-500 text-sm">
                         Loading campaigns…

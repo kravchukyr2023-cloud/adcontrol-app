@@ -40,6 +40,9 @@ const statusStyles = {
 
 type Spreadsheet = { id: string; name: string };
 
+type Banner = { kind: "success"; text: string } | { kind: "error"; text: string };
+type BannerState = Banner | null;
+
 export default function GoogleSheetsCard({
   projectId,
   projectName,
@@ -55,11 +58,7 @@ export default function GoogleSheetsCard({
   // spreadsheet_id) or disconnect.
   const [forcePicker, setForcePicker] = useState(false);
 
-  const [banner, setBanner] = useState<
-    | { kind: "success"; text: string }
-    | { kind: "error"; text: string }
-    | null
-  >(null);
+  const [banner, setBanner] = useState<BannerState>(null);
 
   // Honor ?success=google_sheets_connected / ?error=... from the OAuth
   // callback redirect. Once observed, strip the params from the URL so a
@@ -177,6 +176,7 @@ export default function GoogleSheetsCard({
           spreadsheetName={status.spreadsheet_name}
           lastSyncAt={status.last_sync_at}
           onChangeSheet={() => setForcePicker(true)}
+          onBanner={setBanner}
           onChanged={refresh}
         />
       )}
@@ -532,6 +532,7 @@ function ValidatedState({
   spreadsheetName,
   lastSyncAt,
   onChangeSheet,
+  onBanner,
   onChanged,
 }: {
   projectId: string;
@@ -539,9 +540,11 @@ function ValidatedState({
   spreadsheetName: string | null;
   lastSyncAt: string | null;
   onChangeSheet: () => void;
+  onBanner: (b: BannerState) => void;
   onChanged: () => void;
 }) {
   const [working, setWorking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   async function handleDisconnect() {
     if (!confirm("Disconnect Google Sheets from this project?")) return;
@@ -549,6 +552,41 @@ function ValidatedState({
     await disconnectGoogle(projectId);
     setWorking(false);
     onChanged();
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    onBanner(null);
+    try {
+      const resp = await fetch("/api/google/sheets/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as SyncResponse;
+
+      if (!resp.ok) {
+        onBanner({
+          kind: "error",
+          text: data.error ?? `Sync failed (${resp.status})`,
+        });
+        return;
+      }
+
+      onBanner({
+        kind: data.ok === false ? "error" : "success",
+        text: formatSyncResult(data),
+      });
+    } catch (err) {
+      onBanner({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setSyncing(false);
+      // Refresh status so last_synced_at + error state reflect the sync.
+      onChanged();
+    }
   }
 
   return (
@@ -575,16 +613,23 @@ function ValidatedState({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          disabled
-          title="Manual sync is coming in the next stage"
-          className="h-11 px-5 rounded-xl border border-[#1B2238] text-sm text-zinc-400 cursor-not-allowed"
+          onClick={handleSync}
+          disabled={syncing || working}
+          className="h-11 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition inline-flex items-center gap-2"
         >
-          Sync now
+          {syncing ? (
+            <>
+              <Spinner />
+              Syncing…
+            </>
+          ) : (
+            "Sync now"
+          )}
         </button>
         <button
           type="button"
           onClick={onChangeSheet}
-          disabled={working}
+          disabled={working || syncing}
           className="h-11 px-5 rounded-xl border border-[#1B2238] hover:border-zinc-700 text-sm text-zinc-200 transition disabled:opacity-50"
         >
           Change spreadsheet
@@ -592,7 +637,7 @@ function ValidatedState({
         <button
           type="button"
           onClick={handleDisconnect}
-          disabled={working}
+          disabled={working || syncing}
           className="h-11 px-5 rounded-xl border border-rose-500/40 hover:border-rose-500/70 bg-rose-500/5 hover:bg-rose-500/10 text-rose-300 text-sm transition disabled:opacity-50"
         >
           Disconnect
@@ -791,4 +836,47 @@ async function disconnectGoogle(projectId: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId }),
   }).catch(() => null);
+}
+
+type SyncResponse = {
+  ok?: boolean;
+  total_rows?: number;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+  errors?: Array<{ rowIndex: number; reason: string }>;
+  truncated?: boolean;
+  message?: string;
+  error?: string;
+};
+
+function formatSyncResult(data: SyncResponse): string {
+  if (data.message && (data.total_rows ?? 0) === 0) {
+    return data.message;
+  }
+
+  const inserted = data.inserted ?? 0;
+  const updated = data.updated ?? 0;
+  const skipped = data.skipped ?? 0;
+  const total = inserted + updated;
+
+  const parts = [`Synced ${total} orders (${inserted} new, ${updated} updated, ${skipped} skipped)`];
+
+  if (data.truncated && data.message) {
+    parts.push(data.message);
+  }
+
+  if (skipped > 0 && data.errors && data.errors.length > 0) {
+    const sample = data.errors
+      .slice(0, 3)
+      .map((e) => `row ${e.rowIndex}: ${e.reason}`)
+      .join("; ");
+    parts.push(
+      `First skipped: ${sample}${
+        data.errors.length > 3 ? ` (+${data.errors.length - 3} more)` : ""
+      }`
+    );
+  }
+
+  return parts.join(" — ");
 }

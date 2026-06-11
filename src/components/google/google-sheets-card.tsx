@@ -3,32 +3,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { useGoogleSheetsStatus } from "@/hooks/use-google-sheets-status";
 
-// Placeholder template URL — replace with a real public Google Sheets template
-// link once design hands one off. Keeping it inline so swapping later is a
-// single-line edit; no need for an env var.
+// Public AdControl template. The `/copy` suffix opens Google's
+// "Make a copy" dialog directly — better UX than `/edit` which shows the
+// shared (read-only) view first.
 const TEMPLATE_URL =
-  "https://docs.google.com/spreadsheets/d/1adcontrol-template-placeholder/copy";
+  "https://docs.google.com/spreadsheets/d/1hwmblsQRaAHbbq9EHKZgWeNTGiZCARR4W6qf0R73Tz8/copy";
 
 type TemplateColumn = {
   name: string;
   type: "date" | "text" | "number";
   required: boolean;
+  example: string;
   note?: string;
 };
 
 const TEMPLATE_COLUMNS: TemplateColumn[] = [
-  { name: "date", type: "date", required: true, note: "YYYY-MM-DD" },
-  { name: "order_id", type: "text", required: true },
-  { name: "customer_name", type: "text", required: false },
-  { name: "customer_email", type: "text", required: false },
-  { name: "product", type: "text", required: false },
-  { name: "revenue", type: "number", required: true },
-  { name: "currency", type: "text", required: true, note: "3-letter ISO, e.g. USD" },
-  { name: "utm_source", type: "text", required: false },
-  { name: "utm_medium", type: "text", required: false },
-  { name: "utm_campaign", type: "text", required: false },
-  { name: "utm_content", type: "text", required: false },
-  { name: "utm_term", type: "text", required: false },
+  { name: "date", type: "date", required: true, example: "2026-06-09", note: "YYYY-MM-DD" },
+  { name: "order_id", type: "text", required: true, example: "ORD-001" },
+  { name: "customer_name", type: "text", required: false, example: "Ivan Petrov" },
+  { name: "customer_email", type: "text", required: false, example: "ivan@mail.com" },
+  { name: "product", type: "text", required: false, example: "Course" },
+  { name: "revenue", type: "number", required: true, example: "27.27" },
+  { name: "currency", type: "text", required: true, example: "USD", note: "3-letter ISO" },
+  { name: "utm_source", type: "text", required: false, example: "Campaign Name", note: "→ Meta Campaign" },
+  { name: "utm_medium", type: "text", required: false, example: "Adset Name", note: "→ Meta Adset" },
+  { name: "utm_campaign", type: "text", required: false, example: "Ad Name", note: "→ Meta Ad" },
+  { name: "utm_content", type: "text", required: false, example: "creative_1" },
+  { name: "utm_term", type: "text", required: false, example: "keyword_1" },
 ];
 
 const statusStyles = {
@@ -155,7 +156,10 @@ export default function GoogleSheetsCard({
       )}
 
       {projectId && currentState === "not_connected" && (
-        <NotConnectedState projectId={projectId} />
+        <>
+          <NotConnectedState projectId={projectId} />
+          <HowToConnect />
+        </>
       )}
 
       {projectId && currentState === "connected_no_sheet" && status && (
@@ -190,14 +194,20 @@ export default function GoogleSheetsCard({
         />
       )}
 
-      {/* Template block is visible whenever the user is past the initial
-          connect step — it documents the exact column contract the
-          /select endpoint enforces, so the user can fix mismatches without
-          guessing. */}
+      {/* Platform contract docs (UTM schema, currency rule, column table).
+          Visible in every state EXCEPT loading — even when not_connected,
+          so the user understands what they're committing to before clicking
+          Connect. */}
       {projectId &&
-        (currentState === "connected_no_sheet" ||
+        (currentState === "not_connected" ||
+          currentState === "connected_no_sheet" ||
           currentState === "error" ||
-          currentState === "connected_validated") && <TemplateBlock />}
+          currentState === "connected_validated") && (
+          <>
+            <UtmSchemaBlock />
+            <TemplateBlock />
+          </>
+        )}
     </div>
   );
 }
@@ -734,6 +744,110 @@ function ErrorStateView({
   );
 }
 
+function HowToConnect() {
+  const steps: string[] = [
+    "Copy the template spreadsheet.",
+    "Fill it with your sales data.",
+    'Click "Connect Google Sheets" above.',
+    "Allow access to your Google account.",
+    "Select your spreadsheet.",
+    'Click "Select & Validate".',
+    "Sync — your data appears in Sales.",
+  ];
+
+  return (
+    <div className="mt-6 border-t border-[#1B2238] pt-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-white">How to connect</h3>
+        <a
+          href={TEMPLATE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="h-8 px-3 rounded-lg bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-xs font-medium transition inline-flex items-center justify-center"
+        >
+          Copy template →
+        </a>
+      </div>
+      <ol className="space-y-1.5 text-xs text-zinc-300 list-none">
+        {steps.map((step, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#1B2238] text-[10px] text-zinc-300 shrink-0">
+              {i + 1}
+            </span>
+            <span className="pt-0.5">{step}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * UTM schema + currency rule. Two platform contracts the user MUST follow,
+ * surfaced as a single visually-loud block so neither rule is missed.
+ *
+ *   UTM → Meta entity mapping comes from src/server/attribution/match-orders.ts
+ *   (platform-wide, NOT user-configurable). Currency rule comes from the
+ *   Stage 22 philosophy doc.
+ */
+function UtmSchemaBlock() {
+  return (
+    <div className="mt-6">
+      <div className="rounded-xl border border-[#6D5EF8]/40 bg-[#6D5EF8]/10 overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#6D5EF8]/30 flex items-center gap-2">
+          <span className="w-1.5 h-5 rounded bg-[#6D5EF8]" aria-hidden />
+          <h3 className="text-sm font-semibold text-white">
+            UTM Schema{" "}
+            <span className="text-[10px] uppercase tracking-wider text-violet-300 ml-1">
+              required for attribution
+            </span>
+          </h3>
+        </div>
+
+        <div className="px-4 py-3 space-y-2 text-xs">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-mono text-white">utm_source</span>
+            <span className="text-zinc-500">→</span>
+            <span className="text-zinc-200">your Meta CAMPAIGN name</span>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-mono text-white">utm_medium</span>
+            <span className="text-zinc-500">→</span>
+            <span className="text-zinc-200">your Meta ADSET name</span>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-mono text-white">utm_campaign</span>
+            <span className="text-zinc-500">→</span>
+            <span className="text-zinc-200">your Meta AD name</span>
+          </div>
+          <p className="text-[11px] text-zinc-400 pt-1.5">
+            Names must exactly match your Meta entities. Spaces are auto-handled
+            (<span className="font-mono text-zinc-300">+</span> and URL encoding
+            are decoded before matching).
+          </p>
+        </div>
+
+        <div className="px-4 py-3 border-t border-[#6D5EF8]/30 bg-black/20 space-y-1.5 text-xs">
+          <div className="flex items-baseline gap-2">
+            <span className="text-amber-300 text-[10px] uppercase tracking-wider shrink-0">
+              Currency
+            </span>
+            <span className="text-zinc-200">
+              <span className="font-mono">revenue</span> must be in your Meta
+              ad-account currency (e.g.{" "}
+              <span className="font-mono text-white">USD</span>).
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-400 pl-[68px]">
+            Don&apos;t mix currencies. Real ROAS = Revenue / Spend — both must
+            match or the ratio is meaningless.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TemplateBlock() {
   return (
     <div className="mt-6 border-t border-[#1B2238] pt-5">
@@ -762,6 +876,7 @@ function TemplateBlock() {
               <th className="text-left px-3 py-2 font-medium">Column</th>
               <th className="text-left px-3 py-2 font-medium">Type</th>
               <th className="text-left px-3 py-2 font-medium">Required</th>
+              <th className="text-left px-3 py-2 font-medium">Example</th>
               <th className="text-left px-3 py-2 font-medium">Notes</th>
             </tr>
           </thead>
@@ -777,6 +892,9 @@ function TemplateBlock() {
                   ) : (
                     <span className="text-zinc-500">❌</span>
                   )}
+                </td>
+                <td className="px-3 py-2 font-mono text-zinc-300 whitespace-nowrap">
+                  {c.example}
                 </td>
                 <td className="px-3 py-2 text-zinc-500">{c.note ?? ""}</td>
               </tr>

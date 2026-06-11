@@ -10,6 +10,7 @@ import {
 } from "@/lib/google/sheets";
 import { parseSheetRows, type RowError } from "@/server/sheets/parse-rows";
 import { upsertOrders } from "@/server/sheets/upsert-orders";
+import { matchOrders, type MatchResult } from "@/server/attribution/match-orders";
 import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
@@ -260,6 +261,18 @@ export async function POST(req: NextRequest) {
 
     await markSuccess(sourceId);
 
+    // Attribution runs AFTER orders are persisted. Failure here is non-fatal:
+    // the orders are saved, the user just has to re-trigger matching via
+    // /api/attribution/rematch (or a future cron).
+    let attribution: MatchResult | null = null;
+    try {
+      attribution = await matchOrders({ userId, projectId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[google/sheets/sync] attribution failed: ${msg}`);
+      attribution = null;
+    }
+
     return NextResponse.json({
       ok: true,
       total_rows: totalRows,
@@ -268,6 +281,7 @@ export async function POST(req: NextRequest) {
       skipped: errors.length,
       errors: errors.slice(0, 10) satisfies RowError[],
       truncated,
+      attribution,
       ...(truncated
         ? {
             message: `Synced first ${MAX_SYNC_ROWS} rows of ${totalRows}. Re-run sync to ingest the rest.`,

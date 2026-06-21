@@ -2,6 +2,22 @@
 
 import { useState } from "react";
 import { useShopifyStatus } from "@/hooks/use-shopify-status";
+import { emitMetaSyncCompleted } from "@/lib/meta/events";
+
+type SyncResponse = {
+  ok?: boolean;
+  total_orders?: number;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+  errors?: Array<{ orderId: string; reason: string }>;
+  truncated?: boolean;
+  attribution?: { matched?: number } | null;
+  message?: string;
+  error?: string;
+};
+
+type Banner = { kind: "success"; text: string } | { kind: "error"; text: string };
 
 const statusStyles = {
   available: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
@@ -272,6 +288,56 @@ function ConnectedState({
   onChanged: () => void;
 }) {
   const [working, setWorking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [tokenExpired, setTokenExpired] = useState(false);
+
+  async function handleSync() {
+    if (syncing || working) return;
+    setBanner(null);
+    setTokenExpired(false);
+    setSyncing(true);
+    try {
+      const resp = await fetch("/api/shopify/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as SyncResponse;
+
+      if (resp.status === 401) {
+        setTokenExpired(true);
+        setBanner({
+          kind: "error",
+          text: data.error ?? "Connection expired. Please reconnect.",
+        });
+        return;
+      }
+      if (!resp.ok) {
+        setBanner({
+          kind: "error",
+          text: data.error ?? `Sync failed (${resp.status})`,
+        });
+        return;
+      }
+
+      setBanner({
+        kind: data.ok === false ? "error" : "success",
+        text: formatSyncResult(data),
+      });
+      // Let /sales and /dashboard re-fetch (same event Google uses).
+      emitMetaSyncCompleted();
+    } catch (err) {
+      setBanner({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setSyncing(false);
+      // Refresh status so last_synced_at / error reflect this run.
+      onChanged();
+    }
+  }
 
   async function handleDisconnect() {
     if (!confirm("Disconnect Shopify from this project?")) return;
@@ -302,19 +368,57 @@ function ConnectedState({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled
-          title="Available after orders pipeline"
-          className="h-11 px-5 rounded-xl bg-[#6D5EF8]/40 text-white/70 text-sm font-medium cursor-not-allowed inline-flex items-center gap-2"
+      {banner && (
+        <div
+          className={
+            banner.kind === "success"
+              ? "border border-emerald-500/30 bg-emerald-500/10 rounded-xl px-4 py-3 text-xs text-emerald-200 flex items-start justify-between gap-3"
+              : "border border-rose-500/30 bg-rose-500/10 rounded-xl px-4 py-3 text-xs text-rose-200 flex items-start justify-between gap-3"
+          }
         >
-          Sync now
-        </button>
+          <span>{banner.text}</span>
+          <button
+            type="button"
+            onClick={() => setBanner(null)}
+            className="text-current opacity-70 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        {tokenExpired ? (
+          <button
+            type="button"
+            onClick={handleDisconnect}
+            disabled={working}
+            className="h-11 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] text-white text-sm font-medium transition disabled:opacity-50"
+          >
+            Reconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing || working}
+            className="h-11 px-5 rounded-xl bg-[#6D5EF8] hover:bg-[#7d6ef9] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition inline-flex items-center gap-2"
+          >
+            {syncing ? (
+              <>
+                <Spinner />
+                Syncing…
+              </>
+            ) : (
+              "Sync now"
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleDisconnect}
-          disabled={working}
+          disabled={working || syncing}
           className="h-11 px-5 rounded-xl border border-rose-500/40 hover:border-rose-500/70 bg-rose-500/5 hover:bg-rose-500/10 text-rose-300 text-sm transition disabled:opacity-50"
         >
           Disconnect
@@ -322,6 +426,38 @@ function ConnectedState({
       </div>
     </div>
   );
+}
+
+function formatSyncResult(data: SyncResponse): string {
+  if (data.message && (data.total_orders ?? 0) === 0) {
+    return data.message;
+  }
+
+  const inserted = data.inserted ?? 0;
+  const updated = data.updated ?? 0;
+  const skipped = data.skipped ?? 0;
+  const matched = data.attribution?.matched ?? 0;
+  const total = inserted + updated;
+
+  const parts = [
+    `Synced ${total} orders (${inserted} new, ${updated} updated, ${skipped} skipped)`,
+  ];
+  if (matched > 0) parts.push(`${matched} matched to Meta`);
+  if (data.truncated && data.message) parts.push(data.message);
+
+  if (skipped > 0 && data.errors && data.errors.length > 0) {
+    const sample = data.errors
+      .slice(0, 3)
+      .map((e) => `order ${e.orderId}: ${e.reason}`)
+      .join("; ");
+    parts.push(
+      `First skipped: ${sample}${
+        data.errors.length > 3 ? ` (+${data.errors.length - 3} more)` : ""
+      }`
+    );
+  }
+
+  return parts.join(" — ");
 }
 
 function ErrorState({

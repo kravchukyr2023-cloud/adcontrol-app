@@ -44,6 +44,8 @@ export type SalesRecentOrder = {
   matched_campaign_name: string | null;
   matched_adset_name: string | null;
   matched_ad_name: string | null;
+  /** 'google_sheets' | 'shopify' | 'manual' | null when unknown. */
+  source_type: string | null;
 };
 
 export type SalesAnalyticsStatus = "idle" | "loading" | "ready" | "error";

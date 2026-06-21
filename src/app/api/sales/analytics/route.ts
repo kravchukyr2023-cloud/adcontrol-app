@@ -66,6 +66,7 @@ type OrderListRow = {
   matched_meta_campaign_id: string | null;
   matched_meta_adset_id: string | null;
   matched_meta_ad_id: string | null;
+  sales_source_id: string | null;
 };
 
 function toIsoDate(d: Date): string {
@@ -226,7 +227,7 @@ export async function GET(req: NextRequest) {
     const { data: recentRows, error: recentErr } = await sb
       .from("orders")
       .select(
-        "id, order_date, customer_name, customer_email, product_name, revenue, currency, utm_source, utm_medium, utm_campaign, attribution_status, matched_meta_campaign_id, matched_meta_adset_id, matched_meta_ad_id"
+        "id, order_date, customer_name, customer_email, product_name, revenue, currency, utm_source, utm_medium, utm_campaign, attribution_status, matched_meta_campaign_id, matched_meta_adset_id, matched_meta_ad_id, sales_source_id"
       )
       .eq("user_id", userId)
       .eq("project_id", params.project_id)
@@ -271,8 +272,19 @@ export async function GET(req: NextRequest) {
           .filter((v): v is string => !!v)
       )
     );
+    // Resolve source_type per order via a single IN on sales_sources.
+    // We avoid a PostgREST embed here because many-to-one returns either an
+    // object or null and the type narrowing is awkward across the rest of
+    // the OrderListRow shape — one explicit lookup keeps the schema literal.
+    const sourceIds = Array.from(
+      new Set(
+        recents
+          .map((r) => r.sales_source_id)
+          .filter((v): v is string => !!v)
+      )
+    );
 
-    const [campaignNames, adsetNames, adNames] = await Promise.all([
+    const [campaignNames, adsetNames, adNames, sourceTypes] = await Promise.all([
       campaignIds.length > 0
         ? sb
             .from("meta_campaigns")
@@ -287,6 +299,12 @@ export async function GET(req: NextRequest) {
         : Promise.resolve({ data: [], error: null }),
       adIds.length > 0
         ? sb.from("meta_ads").select("id, ad_name").in("id", adIds)
+        : Promise.resolve({ data: [], error: null }),
+      sourceIds.length > 0
+        ? sb
+            .from("sales_sources")
+            .select("id, source_type")
+            .in("id", sourceIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -311,6 +329,13 @@ export async function GET(req: NextRequest) {
     }>) {
       if (r.ad_name) adNameById.set(r.id, r.ad_name);
     }
+    const sourceTypeById = new Map<string, string>();
+    for (const r of (sourceTypes.data ?? []) as Array<{
+      id: string;
+      source_type: string | null;
+    }>) {
+      if (r.source_type) sourceTypeById.set(r.id, r.source_type);
+    }
 
     const recentOrders = recents.map((r) => ({
       id: r.id,
@@ -333,6 +358,12 @@ export async function GET(req: NextRequest) {
       matched_ad_name: r.matched_meta_ad_id
         ? adNameById.get(r.matched_meta_ad_id) ?? null
         : null,
+      // Orders with no sales_source_id come from the manual-orders form
+      // (Sprint 4, Stage 16). Surface them as "manual" so the UI doesn't
+      // need a separate null/manual branch.
+      source_type: r.sales_source_id
+        ? sourceTypeById.get(r.sales_source_id) ?? null
+        : "manual",
     }));
 
     const perCampaignObj: Record<

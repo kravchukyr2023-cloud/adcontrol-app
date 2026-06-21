@@ -99,6 +99,7 @@ function AttributionBadge({
 const COLS = [
   "Date",
   "Customer",
+  "Source",
   "Product",
   "Revenue",
   "Attribution",
@@ -106,6 +107,43 @@ const COLS = [
   "utm_medium",
   "utm_campaign",
 ];
+
+function SourceBadge({ source_type }: { source_type: string | null }) {
+  // Brand-tinted neutral badge — Shopify emerald (their brand green),
+  // Google Sheets sky (their brand blue), manual zinc. Unknown source
+  // is intentionally rendered as an em-dash so the column stays compact
+  // without padding around an invisible element.
+  if (!source_type) {
+    return <span className="text-zinc-500">—</span>;
+  }
+
+  let cls: string;
+  let label: string;
+  switch (source_type) {
+    case "shopify":
+      cls = "text-emerald-300 border-emerald-500/30 bg-emerald-500/10";
+      label = "Shopify";
+      break;
+    case "google_sheets":
+      cls = "text-sky-300 border-sky-500/30 bg-sky-500/10";
+      label = "Sheets";
+      break;
+    case "manual":
+      cls = "text-zinc-300 border-zinc-700/60 bg-zinc-700/20";
+      label = "Manual";
+      break;
+    default:
+      return <span className="text-zinc-500">—</span>;
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center text-[10px] uppercase tracking-wider border px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
 
 export default function RecentOrdersSection({
   projectId,
@@ -207,7 +245,7 @@ export default function RecentOrdersSection({
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[1100px]">
+        <table className="w-full text-sm min-w-[1200px]">
           <thead className="text-[10px] text-zinc-500 uppercase tracking-wider bg-black/30">
             <tr>
               {COLS.map((c, i) => (
@@ -270,6 +308,9 @@ export default function RecentOrdersSection({
                     </td>
                     <td className="px-3 py-3 text-zinc-200 truncate max-w-[180px]">
                       {customer}
+                    </td>
+                    <td className="px-3 py-3">
+                      <SourceBadge source_type={o.source_type} />
                     </td>
                     <td className="px-3 py-3 text-zinc-300 truncate max-w-[180px]">
                       {o.product_name ?? "—"}

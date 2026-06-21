@@ -364,7 +364,7 @@ function ConnectedState({
           <div className="text-xs text-zinc-500 mt-1 font-mono">{shopUrl}</div>
         )}
         <div className="text-xs text-zinc-500 mt-2">
-          Last synced: {lastSyncAt ? formatDate(lastSyncAt) : "never synced"}
+          Last synced: {lastSyncAt ? formatDate(lastSyncAt) : "never"}
         </div>
       </div>
 

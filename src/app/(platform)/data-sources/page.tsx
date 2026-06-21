@@ -237,24 +237,32 @@ function MetaAdsCard({
     overview.refresh();
   }
 
-  function badge(): { label: string; cls: string } {
+  function badge(): { label: string; cls: string; dot: string } {
+    // Dot colors mirror the Google/Shopify cards so the three Data Sources
+    // cards read as one visual system (Stage 27 cosmetic alignment).
+    const DOTS = {
+      placeholder: "bg-zinc-500",
+      warning: "bg-amber-400",
+      available: "bg-emerald-400",
+      error: "bg-rose-400",
+    } as const;
     if (meta.status === "loading") {
-      return { label: "Loading…", cls: statusStyles.placeholder };
+      return { label: "Loading…", cls: statusStyles.placeholder, dot: DOTS.placeholder };
     }
-    if (isExpired) return { label: "Token expired", cls: statusStyles.warning };
+    if (isExpired) return { label: "Token expired", cls: statusStyles.warning, dot: DOTS.warning };
     if (isDisconnected) {
-      return { label: "Disconnected", cls: statusStyles.placeholder };
+      return { label: "Disconnected", cls: statusStyles.placeholder, dot: DOTS.placeholder };
     }
     if (isConnected && hasAnyBm) {
-      return { label: "Connected", cls: statusStyles.available };
+      return { label: "Connected", cls: statusStyles.available, dot: DOTS.available };
     }
     if (isConnected) {
-      return { label: "Connected — add BM", cls: statusStyles.warning };
+      return { label: "Connected — add BM", cls: statusStyles.warning, dot: DOTS.warning };
     }
     if (isNoBindingYet) {
-      return { label: "Connected — pick BM", cls: statusStyles.warning };
+      return { label: "Connected — pick BM", cls: statusStyles.warning, dot: DOTS.warning };
     }
-    return { label: "Not connected", cls: statusStyles.placeholder };
+    return { label: "Not connected", cls: statusStyles.placeholder, dot: DOTS.placeholder };
   }
   const b = badge();
 
@@ -352,8 +360,9 @@ function MetaAdsCard({
           </div>
         </div>
         <span
-          className={`text-[10px] uppercase tracking-wider border px-2 py-1 rounded-full shrink-0 ${b.cls}`}
+          className={`text-[10px] uppercase tracking-wider border px-2 py-1 rounded-full shrink-0 flex items-center gap-1.5 ${b.cls}`}
         >
+          <span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />
           {b.label}
         </span>
       </div>

@@ -14,6 +14,7 @@ import DisconnectMetaModal from "@/components/meta/disconnect-meta-modal";
 import ProjectBmSection from "@/components/meta/project-bm-section";
 import AddBmModal from "@/components/meta/add-bm-modal";
 import GoogleSheetsCard from "@/components/google/google-sheets-card";
+import ShopifyCard from "@/components/shopify/shopify-card";
 
 type SecondarySource = {
   name: string;
@@ -23,9 +24,9 @@ type SecondarySource = {
   feature: FeatureId;
 };
 
-// Google Sheets has its own first-class card (GoogleSheetsCard) below the
-// Meta card. The placeholder grid only carries connectors that aren't built
-// out yet.
+// Google Sheets and Shopify have their own first-class cards
+// (GoogleSheetsCard, ShopifyCard) below the Meta card. The placeholder grid
+// only carries connectors that aren't built out yet.
 const SECONDARY_SOURCES: SecondarySource[] = [
   {
     name: "Manual Orders",
@@ -33,14 +34,6 @@ const SECONDARY_SOURCES: SecondarySource[] = [
     icon: "M",
     iconBg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
     feature: "manual_orders",
-  },
-  {
-    name: "Shopify",
-    description:
-      "Sync real orders, revenue and AOV from your store as the source of truth.",
-    icon: "S",
-    iconBg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
-    feature: "shopify",
   },
 ];
 
@@ -73,6 +66,11 @@ export default function DataSourcesPage() {
       />
 
       <GoogleSheetsCard
+        projectId={project?.id ?? null}
+        projectName={project?.name ?? null}
+      />
+
+      <ShopifyCard
         projectId={project?.id ?? null}
         projectName={project?.name ?? null}
       />

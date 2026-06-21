@@ -2,29 +2,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSupabase } from "@/server/meta/admin-supabase";
 import { syncProject } from "@/server/meta/sync-project";
 import { syncGoogleSheetsSource } from "@/server/sheets/sync-source";
+import { syncShopifySource } from "@/server/shopify/sync-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * Hobby plan budgets — 60s function ceiling. Reserve ~10s of headroom
- * for the Google loop so a slow Meta run doesn't starve sales sync.
- * Past the soft deadline we skip the Google loop entirely and rely on
- * tomorrow's cron — better than half-syncing some users.
+ * Hobby plan budgets — 60s function ceiling, three sequential passes
+ * (Meta → Google → Shopify). Soft deadlines are SKIP-IF-PAST checkpoints
+ * on the shared wall clock, NOT per-pass time slices. Tuning intent:
+ *
+ *   - Meta is unbounded (always runs first); a slow Meta can eat the
+ *     budget and we skip the rest — better than half-syncing some users.
+ *   - Google is allowed to run until 45s have elapsed, then exits.
+ *     Tightened from 50s in Stage 20 to leave headroom for Shopify.
+ *   - Shopify runs until 53s, draining whatever budget is left after
+ *     Google. May be near zero on a Meta-heavy day, which is fine —
+ *     tomorrow's cron picks up the orphaned shops.
+ *
+ * Per-pass MAX_*_SOURCES_PER_RUN caps the number of rows we even consider
+ * so a backlog of error'd sources can't monopolize a healthy day.
  */
 const TOTAL_BUDGET_MS = 55_000;
-const GOOGLE_SOFT_DEADLINE_MS = 50_000;
+const GOOGLE_SOFT_DEADLINE_MS = 45_000;
 const MAX_GOOGLE_SOURCES_PER_RUN = 20;
+const SHOPIFY_SOFT_DEADLINE_MS = 53_000;
+const MAX_SHOPIFY_SOURCES_PER_RUN = 20;
 
 /**
  * GET /api/cron/sync-all
  *
- * Vercel Cron entry point. Two passes:
+ * Vercel Cron entry point. Three passes:
  *   1. Meta sync — iterates every user with an active Meta connection
  *      and runs syncProject() for each of their projects.
- *   2. Google Sheets sync — iterates every `sales_sources` row that has
+ *   2. Google Sheets sync — iterates every `sales_sources` row with
  *      source_type='google_sheets', status='active', and a configured
  *      spreadsheet_id, and runs syncGoogleSheetsSource() per row.
+ *   3. Shopify sync — iterates every `sales_sources` row with
+ *      source_type='shopify', status='active', and runs
+ *      syncShopifySource() per row. Runs after Meta + Google so the
+ *      Stage 21 attribution matcher sees the freshly-synced Meta
+ *      entities.
  *
  * Auth: shared-secret bearer in the Authorization header. The check
  * runs FIRST — before any SQL — so an unauthenticated probe never
@@ -241,9 +259,82 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Pass 3: Shopify sync.
+  // Runs last — by now Meta entities are fresh, so the attribution
+  // matcher inside syncShopifySource sees them. Shares the same
+  // soft-deadline pattern as Google; if Meta+Google ate the budget,
+  // we skip and rely on tomorrow's cron.
+  // -----------------------------------------------------------------
+  let shopifyAttempted = 0;
+  let shopifySuccess = 0;
+  let shopifyErrors = 0;
+  let shopifySkippedBudget = 0;
+
+  if (Date.now() - startMs >= SHOPIFY_SOFT_DEADLINE_MS) {
+    console.log(
+      `[cron] shopify loop skipped — earlier passes consumed ${Date.now() - startMs}ms (budget ${SHOPIFY_SOFT_DEADLINE_MS}ms)`
+    );
+  } else {
+    const { data: shopifyRows, error: shopifyErr } = await sb
+      .from("sales_sources")
+      .select("id, user_id")
+      .eq("source_type", "shopify")
+      .eq("status", "active")
+      .order("last_sync_at", { ascending: true, nullsFirst: true })
+      .limit(MAX_SHOPIFY_SOURCES_PER_RUN);
+
+    if (shopifyErr) {
+      console.error(
+        `[cron] shopify sales_sources lookup failed: ${shopifyErr.message}`
+      );
+    } else {
+      const sources = (shopifyRows ?? []) as Array<{
+        id: string;
+        user_id: string;
+      }>;
+
+      for (const src of sources) {
+        if (Date.now() - startMs >= SHOPIFY_SOFT_DEADLINE_MS) {
+          shopifySkippedBudget += sources.length - shopifyAttempted;
+          console.log(
+            `[cron] shopify loop deadline hit after ${shopifyAttempted} sources — ${shopifySkippedBudget} skipped`
+          );
+          break;
+        }
+        if (Date.now() - startMs >= TOTAL_BUDGET_MS) break;
+
+        shopifyAttempted++;
+        try {
+          const outcome = await syncShopifySource({
+            userId: src.user_id,
+            salesSourceId: src.id,
+          });
+          if (outcome.ok) {
+            shopifySuccess++;
+            console.log(
+              `[cron] shopify source=${src.id} status=ok orders=${outcome.total_orders} inserted=${outcome.inserted} updated=${outcome.updated} skipped=${outcome.skipped}`
+            );
+          } else {
+            shopifyErrors++;
+            console.log(
+              `[cron] shopify source=${src.id} status=${outcome.status} error=${outcome.error ?? "—"}`
+            );
+          }
+        } catch (err) {
+          shopifyErrors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[cron] shopify source=${src.id} status=exception msg=${msg}`
+          );
+        }
+      }
+    }
+  }
+
   const durationMs = Date.now() - startMs;
   console.log(
-    `[cron] done users=${userIds.length} projects=${totalProjects} meta_success=${successCount} meta_failed=${failedCount} google_attempted=${googleAttempted} google_success=${googleSuccess} google_errors=${googleErrors} google_skipped_budget=${googleSkippedBudget} google_skipped_nosheet=${googleSkippedNoSheet} duration=${durationMs}ms`
+    `[cron] done users=${userIds.length} projects=${totalProjects} meta_success=${successCount} meta_failed=${failedCount} google_attempted=${googleAttempted} google_success=${googleSuccess} google_errors=${googleErrors} google_skipped_budget=${googleSkippedBudget} google_skipped_nosheet=${googleSkippedNoSheet} shopify_attempted=${shopifyAttempted} shopify_success=${shopifySuccess} shopify_errors=${shopifyErrors} shopify_skipped_budget=${shopifySkippedBudget} duration=${durationMs}ms`
   );
 
   return NextResponse.json({
@@ -257,6 +348,12 @@ export async function GET(req: NextRequest) {
       errors: googleErrors,
       skipped_budget: googleSkippedBudget,
       skipped_no_sheet: googleSkippedNoSheet,
+    },
+    shopify: {
+      attempted: shopifyAttempted,
+      success: shopifySuccess,
+      errors: shopifyErrors,
+      skipped_budget: shopifySkippedBudget,
     },
     duration_ms: durationMs,
   });

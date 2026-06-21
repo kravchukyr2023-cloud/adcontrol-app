@@ -30,9 +30,11 @@ export default function Topbar() {
   const projectId = project?.id ?? null;
   const { preset, setPreset, customRange, setCustomRange } = useGlobalPeriod();
   const sync = useMetaSync(projectId);
-  // Tracks the post-Meta Google sync. Combined with sync.state to drive
-  // the button's spinner so the user sees one continuous loading state.
+  // Track the post-Meta sales syncs. Combined with sync.state to drive
+  // the button's spinner so the user sees one continuous loading state
+  // across all three passes (Meta → Google → Shopify).
   const [googleSyncing, setGoogleSyncing] = useState(false);
+  const [shopifySyncing, setShopifySyncing] = useState(false);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   // Remembers the preset the user was on before opening the picker —
@@ -62,14 +64,21 @@ export default function Topbar() {
   // /api/meta/last-sync endpoint. Skipped earlier to keep the
   // surface minimal until the data source is finalised.
   const handleSync = async () => {
-    if (!projectId || sync.state === "syncing" || googleSyncing) return;
+    if (
+      !projectId ||
+      sync.state === "syncing" ||
+      googleSyncing ||
+      shopifySyncing
+    ) {
+      return;
+    }
     const r = await sync.trigger();
 
-    // Best-effort Google Sheets sync after Meta. The endpoint returns:
-    //   - 404 if the project has no Google source (silent skip)
+    // Best-effort sales-source syncs after Meta. Each endpoint returns:
+    //   - 404 if the project has no source of that kind (silent skip)
     //   - 4xx/5xx on token/access errors (the card already surfaces them)
-    // We never block the Meta-sync result on Google — partial-meta + ok-
-    // google still emits SYNC_COMPLETED so analytics refetch.
+    // We never block the Meta-sync result on these — partial-meta + ok-
+    // sales still emits SYNC_COMPLETED so analytics refetch.
     if (r.state === "success" || r.state === "partial") {
       setGoogleSyncing(true);
       try {
@@ -81,13 +90,25 @@ export default function Topbar() {
       } finally {
         setGoogleSyncing(false);
       }
-      // Single completion event covers Meta + Google. /sales and
-      // /dashboard listen for this to refetch their analytics hooks.
+
+      setShopifySyncing(true);
+      try {
+        await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: projectId }),
+        }).catch(() => null);
+      } finally {
+        setShopifySyncing(false);
+      }
+
+      // Single completion event covers Meta + Google + Shopify. /sales
+      // and /dashboard listen for this to refetch their analytics hooks.
       emitMetaSyncCompleted();
     }
   };
 
-  const syncing = sync.state === "syncing" || googleSyncing;
+  const syncing = sync.state === "syncing" || googleSyncing || shopifySyncing;
   const syncDisabled = !projectId || syncing;
 
   const openPickerFromSelect = (fromPreset: DatePreset) => {

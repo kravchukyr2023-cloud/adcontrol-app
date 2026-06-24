@@ -135,3 +135,62 @@ export type MonthlySnapshot = {
   /** ISO timestamp the snapshot was assembled at — distinct from cache TTL. */
   computedAt: string;
 };
+
+// ===========================================================================
+// Stage 30 — Rules Engine output.
+// ===========================================================================
+
+export type IssueSeverity = "critical" | "warning" | "opportunity" | "info";
+export type IssueLevel = "month" | "campaign" | "adset" | "ad";
+export type IssueConfidence = "high" | "low";
+
+/** Structured number-with-label pair surfaced inside an issue. */
+export type IssueFact = {
+  label: string;
+  /** Stored as a primitive so the AI layer (Stage 31) can quote verbatim. */
+  value: number | string | null;
+};
+
+export type DecisionIssue = {
+  /** Unique within a single DecisionResult. Composed as `${ruleId}:${scope}`. */
+  id: string;
+  ruleId: string;
+  severity: IssueSeverity;
+  level: IssueLevel;
+  /** Present for level !== 'month'. */
+  entityId?: string;
+  entityName?: string;
+  /** Short headline, ≤ 80 chars. */
+  title: string;
+  facts: IssueFact[];
+  /** Imperative one-liner. */
+  recommendedAction: string;
+  /** Sort key for "what matters most by $". Higher = more important. */
+  impact?: number;
+  /** "low" when attribution coverage is poor and the rule reads orders. */
+  confidence: IssueConfidence;
+  /** e.g. parent campaign name for an adset issue. */
+  parentContext?: string;
+};
+
+export type AttributionHealth = {
+  /** attributedRevenue / totals.realRevenue. 1.0 when there's no revenue yet. */
+  coverage: number;
+  /** False → real-based rules downgrade to confidence='low'. */
+  reliable: boolean;
+  /** Human-readable explanation (UI banner + AI prompt). */
+  note: string;
+};
+
+export type DecisionResult = {
+  issues: DecisionIssue[];
+  summary: {
+    totalIssues: number;
+    critical: number;
+    warning: number;
+    opportunity: number;
+    info: number;
+  };
+  attributionHealth: AttributionHealth;
+  computedAt: string;
+};

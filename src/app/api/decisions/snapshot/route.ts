@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabase, getServerUserId } from "@/lib/supabase/server";
 import { buildMonthlySnapshot } from "@/server/decisions/monthly-snapshot";
+import { evaluateSnapshot } from "@/server/decisions/evaluate";
 import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
@@ -9,11 +10,12 @@ export const maxDuration = 30;
 /**
  * GET /api/decisions/snapshot?project_id=<uuid>
  *
- * Temporary endpoint for Stage 29 — returns the raw MonthlySnapshot so the
- * pipeline (and the explore/AI work in Stages 30-31) can be exercised before
- * the cache + cron (Stage 32) and the production /api/decisions endpoint
- * (Stage 33) exist. Plain JSON, no caching, no Decision Engine logic on top
- * yet. Will be folded into /api/decisions in Stage 32.
+ * Temporary endpoint for Stages 29-30 — returns:
+ *   - snapshot: the raw MonthlySnapshot (Stage 29)
+ *   - decisions: the deterministic rules-engine output (Stage 30)
+ *
+ * Plain JSON, no caching, no AI layer yet (that's Stage 31). Will be folded
+ * into the production /api/decisions in Stage 32 / 33.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -47,7 +49,8 @@ export async function GET(req: NextRequest) {
     }
 
     const snapshot = await buildMonthlySnapshot({ userId, projectId });
-    return NextResponse.json(snapshot);
+    const decisions = evaluateSnapshot(snapshot);
+    return NextResponse.json({ snapshot, decisions });
   } catch (err) {
     if (isMissingEnvError(err)) {
       console.error(`[decisions/snapshot] ${err.message}`);

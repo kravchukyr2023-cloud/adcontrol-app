@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabase, getServerUserId } from "@/lib/supabase/server";
 import { buildMonthlySnapshot } from "@/server/decisions/monthly-snapshot";
 import { evaluateSnapshot } from "@/server/decisions/evaluate";
+import { explainDecisions } from "@/server/decisions/explain";
 import { isMissingEnvError } from "@/server/env";
 
 export const runtime = "nodejs";
@@ -10,12 +11,15 @@ export const maxDuration = 30;
 /**
  * GET /api/decisions/snapshot?project_id=<uuid>
  *
- * Temporary endpoint for Stages 29-30 — returns:
+ * Temporary endpoint for Stages 29-31 — returns:
  *   - snapshot: the raw MonthlySnapshot (Stage 29)
  *   - decisions: the deterministic rules-engine output (Stage 30)
+ *   - explanation: AI-generated Ukrainian narrative (Stage 31)
  *
- * Plain JSON, no caching, no AI layer yet (that's Stage 31). Will be folded
- * into the production /api/decisions in Stage 32 / 33.
+ * The AI layer degrades gracefully: when OPENAI_API_KEY is missing or the
+ * LLM is unavailable, `explanation.llmUsed` is false and `monthlyPlan` is a
+ * deterministic template — the brain still works, just with terser language.
+ * Will be folded into the production /api/decisions in Stage 32 / 33.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -50,7 +54,11 @@ export async function GET(req: NextRequest) {
 
     const snapshot = await buildMonthlySnapshot({ userId, projectId });
     const decisions = evaluateSnapshot(snapshot);
-    return NextResponse.json({ snapshot, decisions });
+    // explainDecisions catches every LLM failure internally and returns a
+    // template explanation with llmUsed=false — it never throws, so this
+    // endpoint always returns a useful payload even if the AI is offline.
+    const explanation = await explainDecisions({ snapshot, decisions });
+    return NextResponse.json({ snapshot, decisions, explanation });
   } catch (err) {
     if (isMissingEnvError(err)) {
       console.error(`[decisions/snapshot] ${err.message}`);

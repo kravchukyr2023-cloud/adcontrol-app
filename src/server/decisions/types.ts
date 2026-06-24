@@ -194,3 +194,27 @@ export type DecisionResult = {
   attributionHealth: AttributionHealth;
   computedAt: string;
 };
+
+// ===========================================================================
+// Stage 31 — AI layer.
+// ===========================================================================
+
+/**
+ * Human-readable explanation layer over a DecisionResult.
+ *
+ * Invariant: the AI never invents numbers. `monthlyPlan` and the per-issue
+ * texts may only quote facts already present in the snapshot/decisions
+ * input. When `llmUsed` is false we fell back to a deterministic template
+ * (no API key / quota exhausted / network error / malformed JSON) — the
+ * Decision Engine still works, just with terser language.
+ */
+export type DecisionExplanation = {
+  /** 2–4 sentences summarising the month, written in Ukrainian. */
+  monthlyPlan: string;
+  /** Per-issue 1–2 sentence explanations, keyed by DecisionIssue.id. */
+  issueExplanations: Record<string, string>;
+  /** ISO timestamp. */
+  generatedAt: string;
+  /** False when the AI was unavailable and we returned a template. */
+  llmUsed: boolean;
+};

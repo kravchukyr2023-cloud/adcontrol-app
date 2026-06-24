@@ -7,11 +7,24 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * GET /api/decisions/snapshot?project_id=<uuid>[&refresh=true]
+ * GET /api/decisions?project_id=<uuid>[&refresh=true]
  *
- * Legacy alias kept around so the manual curl recipes used during Stages
- * 29-31 keep working. New callers should use /api/decisions — same shape,
- * same params, identical assembleDecisions() under the hood.
+ * Canonical Decision Engine endpoint.
+ *
+ *   - snapshot + decisions are recomputed live on every call.
+ *   - explanation is read from cache (decision_explanations); generated
+ *     live on first hit per (project, month).
+ *   - ?refresh=true forces a fresh LLM call + cache overwrite (this is
+ *     what the "Оновити" button calls).
+ *
+ * Response shape:
+ *   {
+ *     snapshot, decisions, explanation,
+ *     meta: { explanationFromCache, explanationComputedAt, month }
+ *   }
+ *
+ * The cron at /api/cron/decisions warms this cache once a day; manual
+ * refresh stays responsive (single LLM call ≈ 3-9s under the 30s ceiling).
  */
 export async function GET(req: NextRequest) {
   try {
@@ -38,7 +51,7 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
 
     if (projErr) {
-      console.error(`[decisions/snapshot] project lookup: ${projErr.message}`);
+      console.error(`[decisions] project lookup: ${projErr.message}`);
       return NextResponse.json({ error: "DB error" }, { status: 500 });
     }
     if (!project) {
@@ -49,14 +62,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     if (isMissingEnvError(err)) {
-      console.error(`[decisions/snapshot] ${err.message}`);
+      console.error(`[decisions] ${err.message}`);
       return NextResponse.json(
         { error: "Server misconfiguration", detail: err.message },
         { status: 500 }
       );
     }
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[decisions/snapshot] ${msg}`);
+    console.error(`[decisions] ${msg}`);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

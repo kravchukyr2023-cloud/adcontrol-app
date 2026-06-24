@@ -152,13 +152,15 @@ const DIAGNOSIS_LABEL: Record<DiagnosisLevel, string> = {
   ad: "Ad Diagnosis",
 };
 
-// Ukrainian dative-case nouns used inside running prose ("по цій кампанії …").
-// LEVEL_LABEL above is the English UI chip — fine for badges, wrong for
-// natural-language fall-throughs like the empty state copy.
+// Ukrainian dative-case noun + demonstrative pronoun, agreed in gender,
+// used inside running prose. LEVEL_LABEL above is the English UI chip —
+// fine for badges, wrong for natural-language fall-throughs like the
+// empty state copy. Bundling the pronoun into the map avoids hard-coding
+// "цій" at the call site, which only agrees with feminine кампанія.
 const LEVEL_UA_DATIVE: Record<DiagnosisLevel, string> = {
-  campaign: "кампанії",
-  adset: "адсету",
-  ad: "оголошенню",
+  campaign: "цій кампанії",
+  adset: "цьому адсету",
+  ad: "цьому оголошенню",
 };
 
 function Drawer({
@@ -233,8 +235,8 @@ function Drawer({
 
           {projectId && !loading && !error && data && issues.length === 0 && (
             <p className="text-sm text-zinc-500 text-center py-10">
-              Немає сигналів по цій {LEVEL_UA_DATIVE[entity.level]} за
-              поточний місяць.
+              Немає сигналів по {LEVEL_UA_DATIVE[entity.level]} за поточний
+              місяць.
             </p>
           )}
 

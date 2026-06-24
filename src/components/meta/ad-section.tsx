@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DiagnosisTriggerButton } from "@/components/decisions/diagnosis-drawer-context";
 
 /**
  * Drill-down level 3: ads belonging to a single ad set.
@@ -229,16 +230,17 @@ export default function AdSection({ adsetId, since, until, currency }: Props) {
                     {r.utm ?? "—"}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {/* Diagnosis is placeholder (T-feature). Disabled by
-                        design — wired to nothing yet. */}
-                    <button
-                      type="button"
-                      disabled
-                      title="Coming soon"
-                      className="text-[10px] text-zinc-600 cursor-not-allowed border border-[#1B2238] rounded-md px-2 py-1"
-                    >
-                      Open Diagnosis
-                    </button>
+                    <DiagnosisTriggerButton
+                      entity={{
+                        id: r.id,
+                        name: r.name ?? "—",
+                        level: "ad",
+                        spend: r.spend,
+                        roas: r.roas,
+                        cpa: r.cpa,
+                        ctr: r.ctr,
+                      }}
+                    />
                   </td>
                 </tr>
               );

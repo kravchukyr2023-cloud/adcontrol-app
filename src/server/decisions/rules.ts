@@ -190,7 +190,11 @@ function ruleMonthlyRevenueUndershoot(
         { label: "Real revenue MTD", value: round2(actual) },
         { label: "Pro-rated target MTD", value: round2(plan.proRatedTargetRevenue) },
         { label: "Monthly target", value: round2(plan.targetRevenue) },
-        { label: "% of pro-rated target", value: round2(ratio) },
+        // Integer percentage so the "%" in the label matches the value
+        // verbatim — otherwise the AI dutifully renders "0.45%" instead
+        // of "45%". The progress bar in the UI does its own ×100 from
+        // the raw ratio, so this fix is local to the AI fact stream.
+        { label: "% of pro-rated target", value: Math.round(ratio * 100) },
         { label: "Days left in month", value: daysLeft },
         {
           label: "Daily revenue needed to hit plan",

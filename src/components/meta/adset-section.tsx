@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AdSection from "./ad-section";
+import { DiagnosisTriggerButton } from "@/components/decisions/diagnosis-drawer-context";
 
 /**
  * Drill-down level 2: ad sets belonging to a single campaign.
@@ -174,6 +175,8 @@ export default function AdsetSection({
               <th className="text-right px-3 py-2 font-medium">CTR</th>
               <th className="text-right px-3 py-2 font-medium">Revenue</th>
               <th className="text-right px-3 py-2 font-medium">ROAS</th>
+              {/* Actions column for diagnosis trigger (Stage 33d-2). */}
+              <th className="text-right px-3 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -249,11 +252,24 @@ export default function AdsetSection({
                     <td className="px-3 py-2 text-right text-zinc-200">
                       {fmtRoas(r.roas)}
                     </td>
+                    <td className="px-3 py-2 text-right">
+                      <DiagnosisTriggerButton
+                        entity={{
+                          id: r.id,
+                          name: r.name ?? "—",
+                          level: "adset",
+                          spend: r.spend,
+                          roas: r.roas,
+                          cpa: r.cpa,
+                          ctr: r.ctr,
+                        }}
+                      />
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr>
                       <td></td>
-                      <td colSpan={12} className="px-3 pb-3">
+                      <td colSpan={13} className="px-3 pb-3">
                         <div className="pl-4 border-l border-[#1B2238]/70">
                           <AdSection
                             adsetId={r.id}

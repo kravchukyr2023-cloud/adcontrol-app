@@ -7,17 +7,21 @@ import {
   LlmUnavailableError,
 } from "@/lib/llm/client";
 import { isMissingEnvError } from "@/server/env";
-import type {
-  DecisionExplanation,
-  DecisionResult,
-  MonthlySnapshot,
+import {
+  EXPLANATION_SCHEMA_VERSION,
+  type DecisionExplanation,
+  type DecisionIssue,
+  type DecisionResult,
+  type IssueNarrative,
+  type MonthlySnapshot,
 } from "@/server/decisions/types";
 
 /**
- * Stage 31 — AI explainer.
+ * Stage 31 + 33a — AI explainer.
  *
- * Takes the deterministic Decision Engine output (snapshot + decisions) and
- * produces a human-readable Ukrainian summary plus per-issue one-liners.
+ * Produces a Ukrainian narrative over the deterministic Decision Engine
+ * output. Each issue gets a 4-section IssueNarrative (impact / diagnosis /
+ * action / expectedResult). monthlyPlan is a 2–4 sentence summary.
  *
  * Invariants:
  *   1. The AI never computes numbers. Every figure it can quote is already
@@ -25,35 +29,49 @@ import type {
  *      a bug — the rules engine must surface the fact, not the AI.
  *   2. Graceful degradation. Any LLM failure path (missing key, quota
  *      exhausted, network, malformed JSON) returns `llmUsed: false` plus a
- *      terse template — the brain still functions, it just stops being
- *      pretty. This is the Stage 34 promise, baked in from the start.
+ *      deterministic 4-section template per issue — the brain still works.
+ *   3. Per-field tolerance. If the LLM omits one of the four narrative
+ *      fields for an issue, we fill that single field from the fallback;
+ *      we do not discard the whole issue.
  *
- * No caching here (Stage 32). Each call hits the LLM live.
+ * No caching here (Stage 32 lives in explanation-cache.ts). Each call hits
+ * the LLM live.
  */
 
 const SYSTEM_PROMPT = `Ти — асистент медіа-баєра у платформі AdControl. Аналізуєш місяць рекламних кампаній.
 
 Стиль:
-- Природна українська (рівень Stripe/Notion). Без машинного перекладу і кальок.
+- Природна українська (рівень Stripe/Notion). Без машинного перекладу, без кальок.
 - Конкретно і коротко. Без води, без маркетингових кліше ("оптимізуйте", "розкрийте потенціал", "досягніть успіху").
-- Будь прямим: "real ROAS впав до 0.4 — постав адсет X на паузу" краще ніж "розгляньте варіанти оптимізації".
+- Будь прямим. Кожне поле — 1-2 короткі речення.
 
-Інваріант: ти можеш вживати ТІЛЬКИ числа, які я даю у facts і totals. Не рахуй нові числа і не вигадуй їх. Якщо потрібного числа немає — обійдися без нього.
+Інваріант: ти можеш вживати ТІЛЬКИ числа, які я даю у facts і totals. Не рахуй нові числа, не вигадуй їх. Якщо потрібного числа немає — обійдися без нього.
 
 Якщо attribution coverage низький (reliable=false) — обов'язково почни monthlyPlan з застереження: real-цифри неповні через трекінг, тому це орієнтири, а не остаточний вердикт.
+
+Для КОЖНОГО issue поверни 4 поля:
+- impact: що це означає для бізнесу / наслідок (1-2 речення).
+- diagnosis: чому так сталося, спираючись на цифри з facts (1-2 речення).
+- action: конкретний наступний крок. Якщо в issue є recommended_action — переформулюй його природно тією ж сутністю, не вигадуй нову дію (1-2 речення).
+- expectedResult: що покращиться, якщо виконати action (1-2 речення).
 
 Поверни ЛИШЕ валідний JSON у форматі:
 {
   "monthlyPlan": "2-4 речення загального плану місяця",
   "issues": {
-    "<id>": "1-2 речення пояснення цього issue, що робити далі"
+    "<id>": {
+      "impact": "…",
+      "diagnosis": "…",
+      "action": "…",
+      "expectedResult": "…"
+    }
   }
 }
 
 Без markdown-розмітки, без коментарів, без жодного тексту поза JSON.`;
 
-/** Soft cap on tokens for the JSON reply — fits ≈ 15 issues + 4-sentence plan. */
-const MAX_TOKENS = 1200;
+/** Token budget for the JSON reply — 4 fields × ~15 issues + 4-sentence plan. */
+const MAX_TOKENS = 1600;
 
 export async function explainDecisions(args: {
   snapshot: MonthlySnapshot;
@@ -85,21 +103,29 @@ export async function explainDecisions(args: {
       ? parsed.monthlyPlan.trim()
       : fallbackMonthlyPlan(snapshot, decisions);
 
-  // Filter to issues the rules engine actually emitted. Drops hallucinated
-  // ids, keeps only strings, trims whitespace. Missing entries are fine —
-  // the UI falls back to issue.recommendedAction.
-  const validIds = new Set(decisions.issues.map((i) => i.id));
-  const issueExplanations: Record<string, string> = {};
-  const rawIssues = parsed.issues ?? {};
-  for (const [id, text] of Object.entries(rawIssues)) {
-    if (!validIds.has(id)) continue;
-    if (typeof text !== "string") continue;
-    const trimmed = text.trim();
-    if (!trimmed) continue;
-    issueExplanations[id] = trimmed;
+  // Build narratives only for ids the rules engine actually emitted. For each
+  // issue, missing fields are backfilled from the deterministic fallback so
+  // an LLM that omits a single field doesn't collapse the whole issue card.
+  const issuesById = new Map<string, DecisionIssue>();
+  for (const i of decisions.issues) issuesById.set(i.id, i);
+
+  const rawIssues = (parsed.issues ?? {}) as Record<string, unknown>;
+  const issueExplanations: Record<string, IssueNarrative> = {};
+  for (const issue of decisions.issues) {
+    const fallback = fallbackNarrative(issue);
+    const aiEntry = rawIssues[issue.id];
+    if (aiEntry && typeof aiEntry === "object") {
+      issueExplanations[issue.id] = mergeNarrative(
+        aiEntry as Record<string, unknown>,
+        fallback
+      );
+    } else {
+      issueExplanations[issue.id] = fallback;
+    }
   }
 
   return {
+    schemaVersion: EXPLANATION_SCHEMA_VERSION,
     monthlyPlan,
     issueExplanations,
     generatedAt: new Date().toISOString(),
@@ -192,6 +218,30 @@ function parseLlmJson(raw: string): LlmJson | null {
   }
 }
 
+/**
+ * Per-field fallback merge. The AI may legitimately omit one of the four
+ * fields for some issues (e.g. an opportunity issue may not have a strong
+ * "impact" framing). We never drop the issue — we just patch the missing
+ * field from the deterministic template.
+ */
+function mergeNarrative(
+  ai: Record<string, unknown>,
+  fallback: IssueNarrative
+): IssueNarrative {
+  return {
+    impact: pickString(ai.impact) ?? fallback.impact,
+    diagnosis: pickString(ai.diagnosis) ?? fallback.diagnosis,
+    action: pickString(ai.action) ?? fallback.action,
+    expectedResult: pickString(ai.expectedResult) ?? fallback.expectedResult,
+  };
+}
+
+function pickString(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 // ===========================================================================
 // Fallback templating — deterministic, runs when the LLM is unavailable.
 // ===========================================================================
@@ -217,18 +267,104 @@ function fallbackExplanation(
   snapshot: MonthlySnapshot,
   decisions: DecisionResult
 ): DecisionExplanation {
+  const issueExplanations: Record<string, IssueNarrative> = {};
+  for (const issue of decisions.issues) {
+    issueExplanations[issue.id] = fallbackNarrative(issue);
+  }
   return {
+    schemaVersion: EXPLANATION_SCHEMA_VERSION,
     monthlyPlan: fallbackMonthlyPlan(snapshot, decisions),
-    issueExplanations: {},
+    issueExplanations,
     generatedAt: new Date().toISOString(),
     llmUsed: false,
   };
 }
 
 /**
+ * Deterministic 4-section narrative built from issue.facts + recommendedAction.
+ * Drier than the LLM version on purpose — the goal is "always correct, never
+ * empty", not "well-written".
+ */
+function fallbackNarrative(issue: DecisionIssue): IssueNarrative {
+  return {
+    impact: fallbackImpact(issue),
+    diagnosis: fallbackDiagnosis(issue),
+    action: issue.recommendedAction,
+    expectedResult: fallbackExpectedResult(issue.ruleId),
+  };
+}
+
+function fallbackImpact(issue: DecisionIssue): string {
+  const severityLabel = severityUa(issue.severity);
+  const levelLabel = levelUa(issue.level);
+  const entity = issue.entityName ? ` (${issue.entityName})` : "";
+  return `${severityLabel} ${levelLabel}${entity}: ${issue.title}.`;
+}
+
+function fallbackDiagnosis(issue: DecisionIssue): string {
+  const top = issue.facts
+    .slice(0, 3)
+    .filter((f) => f.value !== null && f.value !== "")
+    .map((f) => `${f.label}: ${f.value}`)
+    .join("; ");
+  return top
+    ? `Ключові показники — ${top}.`
+    : "Деталі — у фактах rules engine.";
+}
+
+/**
+ * Rule-keyed "what will improve" templates. Generic catch-all for unknown
+ * rule ids so a future rule never produces an empty expectedResult.
+ */
+function fallbackExpectedResult(ruleId: string): string {
+  switch (ruleId) {
+    case "M0_attribution_health":
+      return "Real-аналіз стане точним, і подальші поради спиратимуться на підтверджені дані.";
+    case "M1_revenue_undershoot":
+      return "Темп real revenue наблизиться до плану до кінця місяця.";
+    case "M2_roas_below_floor":
+      return "Real ROAS підтягнеться до цільового рівня.";
+    case "C1_campaign_burned_budget":
+      return "Бюджет звільниться під real-прибуткові кампанії.";
+    case "C2_meta_overstates":
+      return "Гроші переключаться на кампанії, де real-продажі підтверджені.";
+    case "A1_adset_weak_link":
+      return "Кампанія підтягне середній real ROAS після перерозподілу між адсетами.";
+    case "AD1_ad_opportunity":
+      return "При масштабуванні оголошення real revenue зросте пропорційно.";
+    default:
+      return "Цільова метрика покращиться після виконання дії.";
+  }
+}
+
+function severityUa(s: DecisionIssue["severity"]): string {
+  switch (s) {
+    case "critical":
+      return "Критичний сигнал";
+    case "warning":
+      return "Попередження";
+    case "opportunity":
+      return "Можливість";
+    case "info":
+      return "Інформація";
+  }
+}
+
+function levelUa(l: DecisionIssue["level"]): string {
+  switch (l) {
+    case "month":
+      return "місячного рівня";
+    case "campaign":
+      return "по кампанії";
+    case "adset":
+      return "по адсету";
+    case "ad":
+      return "по оголошенню";
+  }
+}
+
+/**
  * Compact, all-numeric Ukrainian summary built from snapshot facts only.
- * Intentionally drier than the LLM version — the goal is "always correct,
- * never empty", not "well-written".
  */
 function fallbackMonthlyPlan(
   snapshot: MonthlySnapshot,
@@ -293,14 +429,10 @@ function pct(ratio: number): string {
 }
 
 function money(currency: string, amount: number): string {
-  // Ad-hoc — Intl.NumberFormat would be fine but we don't need locale-aware
-  // formatting in a server-side string we'll render verbatim in the UI.
   return `${round2(amount)} ${currency}`;
 }
 
 function daysWord(n: number): string {
-  // Cheap Ukrainian plural — "день / дні / днів". Good enough for the
-  // fallback string; the LLM version writes natural prose anyway.
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return "днів";
@@ -314,4 +446,5 @@ export const __internals = {
   buildUserPrompt,
   parseLlmJson,
   fallbackMonthlyPlan,
+  fallbackNarrative,
 };

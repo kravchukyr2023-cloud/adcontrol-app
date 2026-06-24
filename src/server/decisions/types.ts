@@ -200,19 +200,49 @@ export type DecisionResult = {
 // ===========================================================================
 
 /**
+ * Four-section narrative the UI renders for each DecisionIssue:
+ *
+ *   IMPACT          — what this means / consequence in business terms
+ *   DIAGNOSIS       — why it happened, anchored in the facts
+ *   ACTION          — concrete next step (mirrors recommendedAction)
+ *   EXPECTED RESULT — what improves once the action is taken
+ *
+ * All fields are short (1–2 sentences) Ukrainian prose. The AI never invents
+ * numbers — it may only quote IssueFact values the rules engine surfaced.
+ */
+export type IssueNarrative = {
+  impact: string;
+  diagnosis: string;
+  action: string;
+  expectedResult: string;
+};
+
+/**
+ * Bumped every time the shape of DecisionExplanation changes, so the cache
+ * (stored as JSONB) can be auto-invalidated without a migration. Stage 33a
+ * went from `issueExplanations: Record<string, string>` (implicit v1) to
+ * `Record<string, IssueNarrative>` (v2). The cache reader treats any row
+ * whose `schemaVersion` mismatches as a miss → next read regenerates fresh.
+ */
+export const EXPLANATION_SCHEMA_VERSION = 2;
+
+/**
  * Human-readable explanation layer over a DecisionResult.
  *
- * Invariant: the AI never invents numbers. `monthlyPlan` and the per-issue
- * texts may only quote facts already present in the snapshot/decisions
- * input. When `llmUsed` is false we fell back to a deterministic template
- * (no API key / quota exhausted / network error / malformed JSON) — the
- * Decision Engine still works, just with terser language.
+ * Invariant: the AI never invents numbers. `monthlyPlan` and every
+ * IssueNarrative field may only quote facts already present in the
+ * snapshot/decisions input. When `llmUsed` is false we fell back to a
+ * deterministic template (no API key / quota exhausted / network error /
+ * malformed JSON) — the Decision Engine still works, just with terser
+ * language.
  */
 export type DecisionExplanation = {
+  /** Bumped on shape changes; cache invalidates when this drifts. */
+  schemaVersion: number;
   /** 2–4 sentences summarising the month, written in Ukrainian. */
   monthlyPlan: string;
-  /** Per-issue 1–2 sentence explanations, keyed by DecisionIssue.id. */
-  issueExplanations: Record<string, string>;
+  /** Per-issue 4-section narratives, keyed by DecisionIssue.id. */
+  issueExplanations: Record<string, IssueNarrative>;
   /** ISO timestamp. */
   generatedAt: string;
   /** False when the AI was unavailable and we returned a template. */

@@ -1,6 +1,9 @@
 import "server-only";
 import { getAdminSupabase } from "@/server/meta/admin-supabase";
-import type { DecisionExplanation } from "@/server/decisions/types";
+import {
+  EXPLANATION_SCHEMA_VERSION,
+  type DecisionExplanation,
+} from "@/server/decisions/types";
 
 /**
  * Stage 32 — DecisionExplanation cache.
@@ -48,7 +51,16 @@ export async function getCachedExplanation(args: {
     return null;
   }
   if (!data?.explanation) return null;
-  return data.explanation as DecisionExplanation;
+
+  const cached = data.explanation as DecisionExplanation;
+  // Stage 33a schema bump: rows written before EXPLANATION_SCHEMA_VERSION
+  // existed (v1) lack the field entirely; rows from older bumps may carry a
+  // stale number. Treat any mismatch as a miss so assemble() regenerates in
+  // the current shape and overwrites the stale row.
+  if (cached.schemaVersion !== EXPLANATION_SCHEMA_VERSION) {
+    return null;
+  }
+  return cached;
 }
 
 export async function saveExplanation(args: {

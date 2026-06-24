@@ -11,6 +11,10 @@ import {
 import { useGlobalPeriod } from "@/hooks/use-global-period";
 import { META_SYNC_COMPLETED } from "@/lib/meta/events";
 import AdsetSection from "@/components/meta/adset-section";
+import {
+  DiagnosisDrawerProvider,
+  DiagnosisTriggerButton,
+} from "@/components/decisions/diagnosis-drawer-context";
 
 type StatusFilter = "All" | "Active" | "Paused";
 
@@ -277,6 +281,7 @@ export default function MetaAdsPage() {
     : "ok";
 
   return (
+    <DiagnosisDrawerProvider projectId={projectId}>
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
@@ -547,7 +552,19 @@ export default function MetaAdsPage() {
                       <td className="px-3 py-3 text-right text-zinc-200">
                         {fmtRoas(c.roas)}
                       </td>
-                      <td className="px-3 py-3 text-right"></td>
+                      <td className="px-3 py-3 text-right">
+                        <DiagnosisTriggerButton
+                          entity={{
+                            id: c.id,
+                            name: c.campaign_name ?? "—",
+                            level: "campaign",
+                            spend: c.spend,
+                            roas: c.roas,
+                            cpa: cpaVal,
+                            ctr: c.ctr,
+                          }}
+                        />
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr>
@@ -631,6 +648,7 @@ export default function MetaAdsPage() {
         </div>
       </section>
     </div>
+    </DiagnosisDrawerProvider>
   );
 }
 

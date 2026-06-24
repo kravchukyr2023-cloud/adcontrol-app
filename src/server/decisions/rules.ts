@@ -76,56 +76,65 @@ export function runAllRules(
 }
 
 /**
- * Computes attribution coverage from the snapshot — `revenue attributed to a
- * campaign / totals.realRevenue`. Returns 1.0 when there's no revenue yet so
- * downstream rules don't treat an empty month as broken tracking.
+ * Computes attribution coverage as `totals.realOrders / totals.purchases` —
+ * the share of Meta-reported purchases that we have a confirmed real order
+ * for. This is the only honest signal: comparing matched revenue against
+ * total real revenue is tautological (in a low-volume month where every
+ * order happens to match a campaign, coverage looks "perfect" even when
+ * Meta is reporting 250 purchases and we have 4 orders).
+ *
+ * Edge cases:
+ *   - Meta purchases = 0 → coverage = 1.0, reliable = true. There's nothing
+ *     to track yet; downstream rules should not be downgraded for an empty
+ *     funnel.
+ *   - More real orders than Meta purchases → coverage clamped to 1.0. Meta
+ *     occasionally under-reports purchases; we don't want spurious >100%.
  */
 export function deriveAttributionHealth(
   snapshot: MonthlySnapshot
 ): AttributionHealth {
-  const totalRevenue = snapshot.totals.realRevenue;
-  if (totalRevenue <= 0) {
+  const metaPurchases = snapshot.totals.purchases;
+  const realOrders = snapshot.totals.realOrders;
+
+  if (metaPurchases <= 0) {
     return {
       coverage: 1,
       reliable: true,
-      note: "No revenue this month yet — attribution health will be computed once orders arrive.",
+      note: "Meta is not reporting purchases this month yet — attribution health will be computed once Meta records sales.",
     };
   }
-  const attributed = snapshot.campaigns.reduce(
-    (acc, c) => acc + (c.realRevenue ?? 0),
-    0
-  );
-  const coverage = attributed / totalRevenue;
+
+  const coverage = Math.min(realOrders / metaPurchases, 1);
   const reliable = coverage >= TUNING.attributionReliableCoverage;
   let note: string;
   if (coverage >= 0.9) {
-    note = `${pct(coverage)} of revenue attributed to Meta campaigns — strong UTM coverage.`;
+    note = `${pct(coverage)} of Meta purchases confirmed by real orders — strong UTM coverage.`;
   } else if (coverage >= TUNING.attributionReliableCoverage) {
-    note = `${pct(coverage)} of revenue attributed to Meta campaigns — sufficient for real-based analysis.`;
+    note = `${pct(coverage)} of Meta purchases confirmed by real orders — sufficient for real-based analysis.`;
   } else if (coverage >= TUNING.attributionWarningCoverage) {
-    note = `Only ${pct(coverage)} of revenue traces back to a Meta campaign — campaign-level conclusions should be treated as orientation.`;
+    note = `Only ${pct(coverage)} of Meta purchases (${realOrders} of ${metaPurchases}) are confirmed by real orders — campaign-level conclusions should be treated as orientation.`;
   } else {
-    note = `Only ${pct(coverage)} of revenue is attributed — UTM tracking is likely broken. Real-based rules below are low-confidence until tracking is fixed.`;
+    note = `Only ${pct(coverage)} of Meta purchases (${realOrders} of ${metaPurchases}) are confirmed by real orders — UTM tracking is incomplete. Real-based analysis is directional until tracking is fixed.`;
   }
   return { coverage, reliable, note };
 }
 
 // ===========================================================================
 // M0 — Attribution Health issue.
-// Fires when coverage drops below the warning threshold AND there's revenue
-// in the month worth tracking. This issue is always pinned to the top by the
-// evaluator so the user reads it before the real-based ones.
+// Fires when Meta purchases > 0 AND `realOrders / purchases` drops below the
+// warning threshold — i.e. Meta sees sales we can't confirm from orders.
+// This issue is always pinned to the top by the evaluator so the user reads
+// it before the real-based ones (which read low under the same conditions).
 // ===========================================================================
 function ruleAttributionHealth(
   snapshot: MonthlySnapshot,
   attribution: AttributionHealth
 ): DecisionIssue[] {
-  if (snapshot.totals.realRevenue <= 0) return [];
+  const metaPurchases = snapshot.totals.purchases;
+  if (metaPurchases <= 0) return [];
   if (attribution.coverage >= TUNING.attributionWarningCoverage) return [];
-  const attributed = snapshot.campaigns.reduce(
-    (acc, c) => acc + (c.realRevenue ?? 0),
-    0
-  );
+  const realOrders = snapshot.totals.realOrders;
+  const missing = Math.max(metaPurchases - realOrders, 0);
   return [
     {
       id: "M0:month",
@@ -134,15 +143,16 @@ function ruleAttributionHealth(
       level: "month",
       title: "UTM tracking coverage is low",
       facts: [
-        { label: "Attributed revenue share", value: round2(attribution.coverage) },
-        { label: "Attributed revenue", value: round2(attributed) },
-        { label: "Total real revenue", value: round2(snapshot.totals.realRevenue) },
+        { label: "Confirmed share of Meta purchases", value: round2(attribution.coverage) },
+        { label: "Real orders MTD", value: realOrders },
+        { label: "Meta-reported purchases MTD", value: metaPurchases },
+        { label: "Unconfirmed Meta purchases", value: missing },
       ],
       recommendedAction:
         "Налаштуй UTM-розмітку на оголошеннях (utm_source = Campaign, utm_medium = Adset, utm_campaign = Ad), щоб real-аналіз був точним.",
-      // Treat low-coverage revenue as the impact — it's the size of the data
+      // Impact ≈ purchases the tracker is missing — scale of the data
       // we can't trust.
-      impact: snapshot.totals.realRevenue - attributed,
+      impact: missing,
       confidence: "high",
     },
   ];

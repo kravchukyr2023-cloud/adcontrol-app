@@ -110,6 +110,22 @@ export type SnapshotTotals = {
   purchases: number;
 };
 
+/**
+ * Which sales-source integrations are wired to this project right now.
+ * `true` iff a `sales_sources` row exists with `status='active'` for that
+ * `source_type`. Independent of whether any orders have arrived yet —
+ * exactly the question the onboarding card needs to grade Step 3.
+ *
+ * Mirrors the truth that `/api/shopify/status` and `/api/google/sheets/status`
+ * already serve to the Data Sources cards, so the Dashboard and Data Sources
+ * page can't disagree about "is X connected".
+ */
+export type ConnectedSalesSources = {
+  googleSheets: boolean;
+  shopify: boolean;
+  manual: boolean;
+};
+
 export type DataCompleteness = {
   /** ads_with_insights / total_ads in the project's ad list. 1.0 when no ads. */
   adInsightsCoverage: number;
@@ -131,6 +147,7 @@ export type MonthlySnapshot = {
   campaigns: EntityPerformance[];
   adsets: EntityPerformance[];
   ads: EntityPerformance[];
+  connectedSalesSources: ConnectedSalesSources;
   dataCompleteness: DataCompleteness;
   /** ISO timestamp the snapshot was assembled at — distinct from cache TTL. */
   computedAt: string;

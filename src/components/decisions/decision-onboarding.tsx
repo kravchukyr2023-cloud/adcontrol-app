@@ -62,12 +62,19 @@ export function computeOnboardingSteps(
     },
     {
       key: "sales",
-      title: "Підключи підтверджені продажі",
+      title: "Підключи Google Sheets або Shopify",
       description:
-        "Shopify або Google Sheets — щоб мозок бачив реальні замовлення, а не лише Meta-конверсії.",
+        "Хоч одне джерело продажів — щоб мозок бачив реальні замовлення, а не лише Meta-конверсії. Дані підтягнуться при першому синку.",
       href: "/data-sources",
       cta: "Перейти до Data Sources",
-      done: snapshot.totals.realOrders > 0,
+      // "Connected" = a row exists in sales_sources for this source_type
+      // with status='active'. We deliberately DON'T wait for the first
+      // sync to land orders — the user wired the integration; the step is
+      // done. Manual orders are intentionally excluded: that's not a
+      // pipeline integration, it's a separate workflow.
+      done:
+        snapshot.connectedSalesSources.googleSheets ||
+        snapshot.connectedSalesSources.shopify,
     },
   ];
   const completed = steps.filter((s) => s.done).length;

@@ -3,6 +3,7 @@ import { getAdminSupabase } from "@/server/meta/admin-supabase";
 import type {
   AdAccountRollup,
   AttributionAggregate,
+  ConnectedSalesSources,
   EntityLevel,
   EntityPerformance,
   MonthlySnapshot,
@@ -78,6 +79,17 @@ export async function buildMonthlySnapshot(params: {
   // ---------- 2. Project → ad account bindings ----------
   const aaUuids = await loadActiveProjectAaUuids(admin, userId, projectId);
 
+  // Sales-source connection state — read once, independent of Meta wiring,
+  // so the onboarding step "Підключи підтверджені продажі" can grade
+  // "is a source connected" (status='active') rather than wait for the
+  // first sync to land rows in `orders`. Same source of truth the Data
+  // Sources page's status pills use (`/api/{shopify,google/sheets}/status`).
+  const connectedSalesSources = await loadConnectedSalesSources(
+    admin,
+    userId,
+    projectId
+  );
+
   // No live AAs → return an empty snapshot (still a valid struct).
   if (aaUuids.length === 0) {
     return emptySnapshot({
@@ -85,6 +97,7 @@ export async function buildMonthlySnapshot(params: {
       projectName: project.name,
       currency: project.currency ?? "USD",
       plan: finalPlan,
+      connectedSalesSources,
     });
   }
 
@@ -419,6 +432,7 @@ export async function buildMonthlySnapshot(params: {
     campaigns: campaignsOut,
     adsets: adsetsOut,
     ads: adsOut,
+    connectedSalesSources,
     dataCompleteness: {
       adInsightsCoverage: coverage,
       totalAds,
@@ -748,6 +762,7 @@ function emptySnapshot(args: {
   projectName: string;
   currency: string;
   plan: PlanContext;
+  connectedSalesSources: ConnectedSalesSources;
 }): MonthlySnapshot {
   return {
     projectId: args.projectId,
@@ -766,6 +781,7 @@ function emptySnapshot(args: {
     campaigns: [],
     adsets: [],
     ads: [],
+    connectedSalesSources: args.connectedSalesSources,
     dataCompleteness: {
       adInsightsCoverage: 1,
       totalAds: 0,
@@ -774,6 +790,46 @@ function emptySnapshot(args: {
     },
     computedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Reads which sales-source integrations are wired to the project. Same
+ * query shape `/api/{shopify,google/sheets}/status` use — single source
+ * of truth in `sales_sources` filtered by `status='active'`.
+ *
+ * Soft-fails to all-false on DB error so an unrelated cache miss can
+ * never break the snapshot path; the user just sees Step 3 unchecked
+ * for one render until the next refresh, never a 500.
+ */
+async function loadConnectedSalesSources(
+  admin: ReturnType<typeof getAdminSupabase>,
+  userId: string,
+  projectId: string
+): Promise<ConnectedSalesSources> {
+  const out: ConnectedSalesSources = {
+    googleSheets: false,
+    shopify: false,
+    manual: false,
+  };
+  const { data, error } = await admin
+    .from("sales_sources")
+    .select("source_type, status")
+    .eq("user_id", userId)
+    .eq("project_id", projectId)
+    .eq("status", "active");
+  if (error) {
+    console.warn(`[monthly-snapshot] sales_sources lookup: ${error.message}`);
+    return out;
+  }
+  for (const row of (data ?? []) as Array<{
+    source_type: string | null;
+    status: string | null;
+  }>) {
+    if (row.source_type === "google_sheets") out.googleSheets = true;
+    else if (row.source_type === "shopify") out.shopify = true;
+    else if (row.source_type === "manual") out.manual = true;
+  }
+  return out;
 }
 
 function num(v: unknown): number {

@@ -160,12 +160,18 @@ export async function GET(req: NextRequest) {
       });
       const decisions = evaluateSnapshot(snapshot);
       const explanation = await explainDecisions({ snapshot, decisions });
-      await saveExplanation({
-        userId: project.userId,
-        projectId: project.id,
-        month,
-        explanation,
-      });
+      // Cron mirrors the assemble guard: only persist real AI output.
+      // If OpenAI is down at the cron window we just skip — tomorrow's
+      // run or the next user request will try again. Caching a fallback
+      // here would freeze the dry template across the whole next day.
+      if (explanation.llmUsed) {
+        await saveExplanation({
+          userId: project.userId,
+          projectId: project.id,
+          month,
+          explanation,
+        });
+      }
       success += 1;
       console.log(
         `[cron/decisions] project=${project.id} status=ok llm=${explanation.llmUsed} issues=${decisions.summary.totalIssues}`

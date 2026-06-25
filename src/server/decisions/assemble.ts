@@ -66,10 +66,18 @@ export async function assembleDecisions(args: {
 
   if (!explanation) {
     explanation = await explainDecisions({ snapshot, decisions });
-    // Save even fallback (llmUsed=false) explanations so the UI is fast
-    // even when the LLM is offline. The cron will overwrite with a real
-    // one as soon as the LLM is back.
-    await saveExplanation({ userId, projectId, month, explanation });
+    // Only cache real AI output. A transient LLM outage (timeout, 5xx,
+    // rate limit) would otherwise persist a deterministic fallback for
+    // the whole month, and every subsequent page-load would serve the
+    // dry template even after OpenAI came back. Skipping the write on
+    // `llmUsed=false` lets the next request retry the LLM organically —
+    // worst case it pays one timeout instead of a day of stale text.
+    // Partial AI output (mergeNarrative filled some fields from
+    // fallback) still has `llmUsed=true` and gets cached, which is
+    // intentional: that's a real LLM result, just not a perfect one.
+    if (explanation.llmUsed) {
+      await saveExplanation({ userId, projectId, month, explanation });
+    }
   }
 
   return {

@@ -12,6 +12,12 @@ import {
 import { useDecisions } from "@/hooks/use-decisions";
 import IssueCard from "@/components/decisions/issue-card";
 import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
+import {
+  computePeerAverages,
+  diagnoseEntity,
+} from "@/lib/decisions/entity-diagnosis";
+import EntityDiagnosisCard from "@/components/decisions/entity-diagnosis-card";
+import type { EntityPerformance } from "@/server/decisions/types";
 
 /**
  * Stage 33d-1 — Decision Engine drawer for Meta Ads.
@@ -207,6 +213,21 @@ function Drawer({
   );
   const explanations = data?.explanation.issueExplanations ?? {};
 
+  // Step 2 — always-on entity diagnosis (deterministic). Pull the matching
+  // EntityPerformance from the snapshot and compute peer averages over the
+  // same level. If the entity isn't in the snapshot (no MTD insights), we
+  // surface a focused "no MTD activity" note instead of grading metrics
+  // that don't exist.
+  const entityPerf = data ? pickEntity(data, entity.id, entity.level) : null;
+  const peers = data ? pickPeers(data, entity.level) : [];
+  const diagnosis =
+    data && entityPerf
+      ? diagnoseEntity(entityPerf, {
+          plan: data.snapshot.plan,
+          peerAverage: computePeerAverages(peers, entity.level),
+        })
+      : null;
+
   return (
     <>
       <div
@@ -234,28 +255,15 @@ function Drawer({
             <p className="text-center text-rose-300 text-sm py-6">{error}</p>
           )}
 
-          {projectId && !loading && !error && data && issues.length === 0 && (
-            <p className="text-sm text-zinc-500 text-center py-10">
-              Немає сигналів по {LEVEL_UA_DATIVE[entity.level]} за поточний
-              місяць.
-            </p>
-          )}
-
+          {/* Rules-engine issues first — these are the highest-priority
+              signals the deterministic + AI layers raised at the project
+              level for this entity. Each one carries its own narrative;
+              fall back to the deterministic narrative on cache misses. */}
           {projectId &&
             !loading &&
             !error &&
             data &&
             issues.map((issue) => {
-              // The rules engine recomputes issues fresh on every request,
-              // but the explanation is read from cache. Whenever the issue
-              // set changes between cron warms (e.g. a campaign crosses the
-              // C1 threshold today), the fresh issue's id is not yet a key
-              // in the cached `issueExplanations`. Without this fallback,
-              // the drawer used to silently drop the card and show
-              // "no signals". The fallback narrative is the same
-              // deterministic text the server writes when the LLM is
-              // offline — so the user always sees the actual rule output,
-              // just with terser language until the cache catches up.
               const narrative =
                 explanations[issue.id] ?? fallbackNarrative(issue);
               return (
@@ -266,12 +274,54 @@ function Drawer({
                 />
               );
             })}
+
+          {/* Always-on entity diagnosis. Sits below issues so the rule
+              signals stay primary, but is never absent for an entity with
+              activity — the previous "no signals" empty state is gone. */}
+          {projectId && !loading && !error && data && diagnosis && (
+            <EntityDiagnosisCard diagnosis={diagnosis} />
+          )}
+
+          {projectId && !loading && !error && data && !entityPerf && (
+            <p className="text-sm text-zinc-500 text-center py-10">
+              За поточний місяць по {LEVEL_UA_DATIVE[entity.level]} немає
+              жодних показів — повний розбір недоступний.
+            </p>
+          )}
         </div>
 
         <Footer onClose={onClose} />
       </aside>
     </>
   );
+}
+
+// ===========================================================================
+// Entity / peer pickers — keep the level → snapshot.{campaigns|adsets|ads}
+// dispatch in one place so future level additions touch only this helper.
+// ===========================================================================
+
+function pickEntity(
+  data: NonNullable<ReturnType<typeof useDecisions>["data"]>,
+  entityId: string,
+  level: DiagnosisLevel
+): EntityPerformance | null {
+  const list = pickPeers(data, level);
+  return list.find((e) => e.id === entityId) ?? null;
+}
+
+function pickPeers(
+  data: NonNullable<ReturnType<typeof useDecisions>["data"]>,
+  level: DiagnosisLevel
+): EntityPerformance[] {
+  switch (level) {
+    case "campaign":
+      return data.snapshot.campaigns;
+    case "adset":
+      return data.snapshot.adsets;
+    case "ad":
+      return data.snapshot.ads;
+  }
 }
 
 function EntityHeader({

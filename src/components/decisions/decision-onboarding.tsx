@@ -4,20 +4,24 @@ import Link from "next/link";
 import type { MonthlySnapshot } from "@/server/decisions/types";
 
 /**
- * Stage 34 — onboarding checklist for a brand-new project.
- *
- * Rendered by DecisionEngineSection when `snapshot.adAccounts.length === 0`.
- * Replaces the previous "Місяць іде в плановому темпі" copy that misled
- * users with no data into thinking everything was healthy.
+ * Stage 34 — onboarding checklist for a project whose Decision Engine
+ * inputs aren't all wired yet.
  *
  * Source of truth for step status is the snapshot itself — no extra fetch.
  * Steps map 1:1 to the three minimum inputs the Decision Engine needs
  * (Meta connection, project targets, real sales source).
+ *
+ * `computeOnboardingSteps` is exported so `DecisionEngineSection` can
+ * decide between "onboarding (some step missing)" and "waiting (all wired,
+ * no data yet)" off the SAME computation that drives this card. Without
+ * that shared helper, a user who connected only Meta but skipped targets +
+ * sales would slip into the waiting state and lose visibility on the
+ * remaining steps.
  */
 
 type StepKey = "meta" | "targets" | "sales";
 
-type Step = {
+export type OnboardingStep = {
   key: StepKey;
   title: string;
   description: string;
@@ -26,12 +30,17 @@ type Step = {
   done: boolean;
 };
 
-export default function DecisionOnboarding({
-  snapshot,
-}: {
-  snapshot: MonthlySnapshot;
-}) {
-  const steps: Step[] = [
+export type OnboardingState = {
+  steps: OnboardingStep[];
+  completed: number;
+  total: number;
+  allDone: boolean;
+};
+
+export function computeOnboardingSteps(
+  snapshot: MonthlySnapshot
+): OnboardingState {
+  const steps: OnboardingStep[] = [
     {
       key: "meta",
       title: "Підключи Meta Ad Accounts",
@@ -61,9 +70,21 @@ export default function DecisionOnboarding({
       done: snapshot.totals.realOrders > 0,
     },
   ];
-
   const completed = steps.filter((s) => s.done).length;
-  const allDone = completed === steps.length;
+  return {
+    steps,
+    completed,
+    total: steps.length,
+    allDone: completed === steps.length,
+  };
+}
+
+export default function DecisionOnboarding({
+  snapshot,
+}: {
+  snapshot: MonthlySnapshot;
+}) {
+  const { steps, completed, total, allDone } = computeOnboardingSteps(snapshot);
 
   return (
     <div className="px-6 py-8 space-y-6">
@@ -75,9 +96,13 @@ export default function DecisionOnboarding({
           Зроби три кроки нижче — і мозок почне щодня аналізувати твій
           місяць та підказувати, де злив і де можна масштабувати.
         </p>
-        <p className="text-[11px] uppercase tracking-wider text-zinc-500 mt-3">
-          Прогрес: {completed} з {steps.length}{" "}
-          {steps.length === 1 ? "крок" : "кроків"}
+        {/* Label stays small-caps for parity with other sub-labels; the
+            value flips back to normal case so the Cyrillic "з" isn't
+            uppercased into "З", which collides visually with the digit
+            "3" in this font and would read as "0 3 3 кроків". */}
+        <p className="text-[11px] text-zinc-500 mt-3">
+          <span className="uppercase tracking-wider">Прогрес:</span>{" "}
+          {completed} з {total} {total === 1 ? "крок" : "кроків"}
         </p>
       </div>
 
@@ -97,7 +122,7 @@ export default function DecisionOnboarding({
   );
 }
 
-function StepCard({ index, step }: { index: number; step: Step }) {
+function StepCard({ index, step }: { index: number; step: OnboardingStep }) {
   return (
     <div
       className={

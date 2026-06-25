@@ -5,7 +5,9 @@ import { useDecisions } from "@/hooks/use-decisions";
 import type { IssueNarrative } from "@/server/decisions/types";
 import IssueCard from "@/components/decisions/issue-card";
 import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
-import DecisionOnboarding from "@/components/decisions/decision-onboarding";
+import DecisionOnboarding, {
+  computeOnboardingSteps,
+} from "@/components/decisions/decision-onboarding";
 
 /**
  * Stage 33b — Dashboard surface of the Decision Engine.
@@ -92,13 +94,18 @@ export default function DecisionEngineSection({
       )}
 
       {projectId && !loading && !error && data && (() => {
-        // Stage 34 — branch on snapshot readiness so a brand-new project
-        // sees an honest onboarding instead of the misleading "all clear"
-        // empty-tab copy. The header above stays the same in every state.
+        // Stage 34 — branch on snapshot readiness. Branching on a SINGLE
+        // shared computation (computeOnboardingSteps) so the section and
+        // the onboarding card can't drift: a user who connected Meta but
+        // skipped targets and sales still sees onboarding with one ✅ and
+        // two ○, instead of slipping into a "waiting" state that hides
+        // the remaining steps.
         const { snapshot } = data;
-        if (snapshot.adAccounts.length === 0) {
+        const onboarding = computeOnboardingSteps(snapshot);
+        if (!onboarding.allDone) {
           return <DecisionOnboarding snapshot={snapshot} />;
         }
+        // All three steps wired but Meta hasn't reported activity yet.
         if (snapshot.totals.spend === 0) {
           return <WaitingForData />;
         }

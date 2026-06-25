@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useDecisions } from "@/hooks/use-decisions";
 import type { IssueNarrative } from "@/server/decisions/types";
 import IssueCard from "@/components/decisions/issue-card";
+import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
 
 /**
  * Stage 33b — Dashboard surface of the Decision Engine.
@@ -104,14 +105,12 @@ export default function DecisionEngineSection({
               <EmptyTab tab={activeTab} />
             ) : (
               activeList.map((issue) => {
-                const narrative: IssueNarrative | undefined =
-                  explanations[issue.id];
-                if (!narrative) {
-                  // Stage 33a guarantees a narrative per issue (LLM or
-                  // fallback), so this is only a safety belt. Skip rather
-                  // than render an empty card.
-                  return null;
-                }
+                // Issues are recomputed fresh per request; explanations come
+                // from cache. A fresh issue id can land here before the cron
+                // warms its narrative — fall back to the deterministic
+                // builder so the rule's signal is never silently dropped.
+                const narrative: IssueNarrative =
+                  explanations[issue.id] ?? fallbackNarrative(issue);
                 return (
                   <IssueCard
                     key={issue.id}

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useDecisions } from "@/hooks/use-decisions";
 import IssueCard from "@/components/decisions/issue-card";
+import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
 
 /**
  * Stage 33d-1 — Decision Engine drawer for Meta Ads.
@@ -245,8 +246,18 @@ function Drawer({
             !error &&
             data &&
             issues.map((issue) => {
-              const narrative = explanations[issue.id];
-              if (!narrative) return null;
+              // The rules engine recomputes issues fresh on every request,
+              // but the explanation is read from cache. Whenever the issue
+              // set changes between cron warms (e.g. a campaign crosses the
+              // C1 threshold today), the fresh issue's id is not yet a key
+              // in the cached `issueExplanations`. Without this fallback,
+              // the drawer used to silently drop the card and show
+              // "no signals". The fallback narrative is the same
+              // deterministic text the server writes when the LLM is
+              // offline — so the user always sees the actual rule output,
+              // just with terser language until the cache catches up.
+              const narrative =
+                explanations[issue.id] ?? fallbackNarrative(issue);
               return (
                 <IssueCard
                   key={issue.id}

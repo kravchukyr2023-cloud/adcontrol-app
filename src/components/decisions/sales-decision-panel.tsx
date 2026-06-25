@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useDecisions } from "@/hooks/use-decisions";
 import { ATTRIBUTION_RULE_IDS } from "@/server/decisions/rule-ids";
 import IssueCard from "@/components/decisions/issue-card";
+import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
 
 /**
  * Stage 33c — Sales & Attribution surface of the Decision Engine.
@@ -68,13 +69,12 @@ export default function SalesDecisionPanel({
             </p>
           ) : (
             visible.map((issue) => {
-              const narrative = explanations[issue.id];
-              if (!narrative) {
-                // Stage 33a guarantees a narrative per issue, so a missing
-                // entry means the AI hallucinated/dropped this id. Skip
-                // rather than render a card with undefined fields.
-                return null;
-              }
+              // Issues are recomputed fresh per request; explanations come
+              // from cache. A fresh issue id can land here before the cron
+              // warms its narrative — fall back to the deterministic
+              // builder so the rule's signal is never silently dropped.
+              const narrative =
+                explanations[issue.id] ?? fallbackNarrative(issue);
               return (
                 <IssueCard
                   key={issue.id}

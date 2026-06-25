@@ -5,6 +5,7 @@ import { useDecisions } from "@/hooks/use-decisions";
 import type { IssueNarrative } from "@/server/decisions/types";
 import IssueCard from "@/components/decisions/issue-card";
 import { fallbackNarrative } from "@/lib/decisions/fallback-narrative";
+import DecisionOnboarding from "@/components/decisions/decision-onboarding";
 
 /**
  * Stage 33b — Dashboard surface of the Decision Engine.
@@ -90,47 +91,126 @@ export default function DecisionEngineSection({
         </div>
       )}
 
-      {projectId && !loading && !error && data && (
-        <>
-          <SummaryBlock data={data} />
-
-          <Tabs
+      {projectId && !loading && !error && data && (() => {
+        // Stage 34 — branch on snapshot readiness so a brand-new project
+        // sees an honest onboarding instead of the misleading "all clear"
+        // empty-tab copy. The header above stays the same in every state.
+        const { snapshot } = data;
+        if (snapshot.adAccounts.length === 0) {
+          return <DecisionOnboarding snapshot={snapshot} />;
+        }
+        if (snapshot.totals.spend === 0) {
+          return <WaitingForData />;
+        }
+        return (
+          <FullDecisionView
+            data={data}
             activeTab={activeTab}
             counts={counts}
-            onChange={setActiveTab}
-          />
-
-          <div className="px-6 py-5 space-y-4">
-            {activeList.length === 0 ? (
-              <EmptyTab tab={activeTab} />
-            ) : (
-              activeList.map((issue) => {
-                // Issues are recomputed fresh per request; explanations come
-                // from cache. A fresh issue id can land here before the cron
-                // warms its narrative — fall back to the deterministic
-                // builder so the rule's signal is never silently dropped.
-                const narrative: IssueNarrative =
-                  explanations[issue.id] ?? fallbackNarrative(issue);
-                return (
-                  <IssueCard
-                    key={issue.id}
-                    issue={issue}
-                    narrative={narrative}
-                    onDismiss={(id) =>
-                      setDismissed((prev) => {
-                        const next = new Set(prev);
-                        next.add(id);
-                        return next;
-                      })
-                    }
-                  />
-                );
+            onChangeTab={setActiveTab}
+            activeList={activeList}
+            explanations={explanations}
+            onDismiss={(id) =>
+              setDismissed((prev) => {
+                const next = new Set(prev);
+                next.add(id);
+                return next;
               })
-            )}
-          </div>
-        </>
-      )}
+            }
+          />
+        );
+      })()}
     </section>
+  );
+}
+
+// ===========================================================================
+// "Has data" composition — extracted so the readiness branch above reads
+// cleanly. Behaviour identical to the prior inline render.
+// ===========================================================================
+
+type FullDecisionViewProps = {
+  data: NonNullable<ReturnType<typeof useDecisions>["data"]>;
+  activeTab: TabKey;
+  counts: Record<TabKey, number>;
+  onChangeTab: (k: TabKey) => void;
+  activeList: NonNullable<
+    ReturnType<typeof useDecisions>["data"]
+  >["decisions"]["issues"];
+  explanations: Record<string, IssueNarrative>;
+  onDismiss: (id: string) => void;
+};
+
+function FullDecisionView({
+  data,
+  activeTab,
+  counts,
+  onChangeTab,
+  activeList,
+  explanations,
+  onDismiss,
+}: FullDecisionViewProps) {
+  return (
+    <>
+      <SummaryBlock data={data} />
+
+      <Tabs activeTab={activeTab} counts={counts} onChange={onChangeTab} />
+
+      <div className="px-6 py-5 space-y-4">
+        {activeList.length === 0 ? (
+          <EmptyTab tab={activeTab} />
+        ) : (
+          activeList.map((issue) => {
+            // Issues are recomputed fresh per request; explanations come
+            // from cache. A fresh issue id can land here before the cron
+            // warms its narrative — fall back to the deterministic
+            // builder so the rule's signal is never silently dropped.
+            const narrative: IssueNarrative =
+              explanations[issue.id] ?? fallbackNarrative(issue);
+            return (
+              <IssueCard
+                key={issue.id}
+                issue={issue}
+                narrative={narrative}
+                onDismiss={onDismiss}
+              />
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+}
+
+function WaitingForData() {
+  return (
+    <div className="px-6 py-12 flex flex-col items-center gap-3 text-center">
+      <span
+        className="w-10 h-10 rounded-full border border-[#1B2238] bg-black/30 text-zinc-400 inline-flex items-center justify-center"
+        aria-hidden
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      </span>
+      <p className="text-sm text-zinc-200 font-medium max-w-md">
+        Все підключено. Чекаємо перші покази й продажі за поточний місяць.
+      </p>
+      <p className="text-xs text-zinc-500 max-w-md">
+        Аналіз з&apos;явиться автоматично, щойно Meta або сейлз-джерело
+        віддасть першу строчку даних.
+      </p>
+    </div>
   );
 }
 

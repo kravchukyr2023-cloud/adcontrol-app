@@ -220,11 +220,29 @@ function Drawer({
   // that don't exist.
   const entityPerf = data ? pickEntity(data, entity.id, entity.level) : null;
   const peers = data ? pickPeers(data, entity.level) : [];
+  // Extra context for the deterministic scale-recipe (Sprint 6.5 Stage
+  // 1c/2). Ads need their parent campaign's display name; campaigns need
+  // their own ads so the recipe can name the best-performing one. Both
+  // fields are looked up from the same snapshot the drawer already
+  // fetched — no additional roundtrips.
+  const parentCampaignName =
+    entityPerf && entityPerf.level === "ad" && entityPerf.parentCampaignId && data
+      ? data.snapshot.campaigns.find(
+          (c) => c.id === entityPerf.parentCampaignId
+        )?.name ?? null
+      : null;
+  const childAds =
+    entityPerf && entityPerf.level === "campaign" && data
+      ? data.snapshot.ads.filter((a) => a.parentCampaignId === entityPerf.id)
+      : [];
   const diagnosis =
     data && entityPerf
       ? diagnoseEntity(entityPerf, {
           plan: data.snapshot.plan,
           peerAverage: computePeerAverages(peers, entity.level),
+          peers,
+          parentCampaignName,
+          childAds,
         })
       : null;
 

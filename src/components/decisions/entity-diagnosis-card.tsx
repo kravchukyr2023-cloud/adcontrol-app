@@ -22,7 +22,8 @@ export default function EntityDiagnosisCard({
 }: {
   diagnosis: EntityDiagnosis;
 }) {
-  const { metrics, trafficVerdict, salesVerdict, summary } = diagnosis;
+  const { metrics, trafficVerdict, salesVerdict, summary, scaleRecipe } =
+    diagnosis;
 
   return (
     <article className="border border-[#1B2238] rounded-xl bg-black/30 overflow-hidden">
@@ -37,6 +38,7 @@ export default function EntityDiagnosisCard({
         <MetricsGrid metrics={metrics} />
         <TrafficSection verdict={trafficVerdict} />
         <SalesSection verdict={salesVerdict} />
+        {scaleRecipe && <ScaleRecipeSection recipe={scaleRecipe} />}
       </div>
     </article>
   );
@@ -150,6 +152,24 @@ function SalesSection({
           </span>
           {verdict.recommendation}
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// Scale recipe — deterministic winner-only block. Emerald accent + positive
+// framing so it reads distinctly from the neutral verdict rows above.
+// ===========================================================================
+
+function ScaleRecipeSection({ recipe }: { recipe: string }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider text-emerald-400 mb-2">
+        Рецепт масштабування
+      </p>
+      <div className="border border-emerald-500/30 bg-emerald-500/5 rounded-lg px-4 py-3">
+        <p className="text-sm text-zinc-100 leading-snug">{recipe}</p>
       </div>
     </div>
   );

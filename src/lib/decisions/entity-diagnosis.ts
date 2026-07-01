@@ -69,6 +69,13 @@ export type EntityDiagnosis = {
   salesVerdict: SalesVerdict;
   /** One-sentence headline above the card body. */
   summary: string;
+  /**
+   * Deterministic scaling recipe for entities that qualify as winners
+   * (real orders > 0 AND real ROAS ≥ target AND top of its level by
+   * real ROAS). Null for everything else, so the drawer can skip the
+   * section without extra logic. AI polishing lands in a later stage.
+   */
+  scaleRecipe: string | null;
 };
 
 export type PeerAverages = {
@@ -132,7 +139,29 @@ export function computePeerAverages(
 
 export function diagnoseEntity(
   entity: EntityPerformance,
-  context: { plan: PlanContext; peerAverage: PeerAverages }
+  context: {
+    plan: PlanContext;
+    peerAverage: PeerAverages;
+    /**
+     * All entities of the same level from the snapshot. Used to decide
+     * whether this entity is the top scorer by real ROAS. Omit / pass
+     * an empty list to skip the scale recipe (drawer that doesn't have
+     * the snapshot handy still gets a valid diagnosis).
+     */
+    peers?: EntityPerformance[];
+    /**
+     * Parent campaign name — only meaningful when entity.level === 'ad'.
+     * Injected here (rather than looked up in-lib) so the diagnosis
+     * module stays snapshot-agnostic.
+     */
+    parentCampaignName?: string | null;
+    /**
+     * Ads that belong to this campaign — only meaningful when
+     * entity.level === 'campaign'. Used to name the best-performing ad
+     * inside the winning campaign's scale recipe.
+     */
+    childAds?: EntityPerformance[];
+  }
 ): EntityDiagnosis {
   const ctr = safeDivide(entity.clicks, entity.impressions);
   const cpc = safeDivide(entity.spend, entity.clicks);
@@ -167,6 +196,13 @@ export function diagnoseEntity(
 
   const salesVerdict = diagnoseSales(entity, context.plan, trafficVerdict.ctr.tier);
 
+  const scaleRecipe = buildScaleRecipe(entity, {
+    targetRoas: context.plan.targetRoas,
+    peers: context.peers ?? [],
+    parentCampaignName: context.parentCampaignName ?? null,
+    childAds: context.childAds ?? [],
+  });
+
   return {
     entityId: entity.id,
     entityName: entity.name,
@@ -187,7 +223,127 @@ export function diagnoseEntity(
     trafficVerdict,
     salesVerdict,
     summary: buildSummary(salesVerdict),
+    scaleRecipe,
   };
+}
+
+// ===========================================================================
+// Scale recipe — deterministic Sprint 6.5 Stage 1c/2 concrete-next-step
+// text for the drawer's "this is a winner" case. Only fires for the top
+// entity of its level with confirmed real sales and ROAS at or above the
+// project's target; everything else returns null and the drawer skips the
+// section.
+// ===========================================================================
+
+function buildScaleRecipe(
+  entity: EntityPerformance,
+  ctx: {
+    targetRoas: number;
+    peers: EntityPerformance[];
+    parentCampaignName: string | null;
+    childAds: EntityPerformance[];
+  }
+): string | null {
+  // Guard 1 — must have real sales and a defined real ROAS.
+  if (entity.realOrders <= 0) return null;
+  if (entity.realRoas === null || !Number.isFinite(entity.realRoas)) {
+    return null;
+  }
+  // Guard 2 — must clear target ROAS (when configured; otherwise fall
+  // through and let "top of level" carry the decision).
+  if (ctx.targetRoas > 0 && entity.realRoas < ctx.targetRoas) return null;
+  // Guard 3 — must be the top of its level by real ROAS across peers with
+  // delivery (realRoas defined). Ties on ROAS: highest real revenue wins
+  // so a single lucky order doesn't crown an entity over one with volume.
+  if (!isTopByRealRoas(entity, ctx.peers)) return null;
+
+  const roas = round2(entity.realRoas);
+  const roasStr = `×${roas.toFixed(2)}`;
+
+  switch (entity.level) {
+    case "ad": {
+      const parentClause = ctx.parentCampaignName
+        ? ` кампанії «${ctx.parentCampaignName}»`
+        : "";
+      return (
+        `Це найкраще оголошення${parentClause} — real ROAS ${roasStr}. ` +
+        `Рекомендую взяти зв'язку адсет + оголошення та винести в окрему кампанію ` +
+        `для тесту, додати нові креативи створені на основі цього оголошення, ` +
+        `і протестувати 2-3 дні.`
+      );
+    }
+    case "adset": {
+      const ordersWord = plural(
+        entity.realOrders,
+        "real-продаж",
+        "real-продажі",
+        "real-продажів"
+      );
+      return (
+        `Цей адсет дає найкращу результативність — ${entity.realOrders} ${ordersWord}, ` +
+        `real ROAS ${roasStr}, найкраще серед усіх адсетів. Рекомендую зберегти ` +
+        `цю аудиторію, проаналізувати її креативи, створити нові на їх основі та ` +
+        `запустити окремою кампанією тільки з цією аудиторією. Тест 2-3 дні.`
+      );
+    }
+    case "campaign": {
+      const bestAd = pickBestChildAd(ctx.childAds);
+      const adClause = bestAd
+        ? ` — «${bestAd.name}» (ROAS ×${round2(bestAd.realRoas ?? 0).toFixed(2)})`
+        : "";
+      return (
+        `Це найкраща кампанія за real ROAS ${roasStr}. Рекомендую проаналізувати ` +
+        `її найкраще оголошення${adClause} і створити нові креативи на його основі.`
+      );
+    }
+  }
+}
+
+/**
+ * True iff `entity` has the highest realRoas among peers of the same level
+ * with a defined realRoas AND at least one real order. Ties broken by real
+ * revenue (higher wins). Peers with realRoas === null (no spend) are
+ * excluded — they aren't candidates. A level with only one qualifying
+ * entity still returns true; a lone winner is still a winner.
+ */
+function isTopByRealRoas(
+  entity: EntityPerformance,
+  peers: EntityPerformance[]
+): boolean {
+  if (entity.realRoas === null) return false;
+  const candidates = peers.filter(
+    (p) =>
+      p.level === entity.level &&
+      p.realRoas !== null &&
+      Number.isFinite(p.realRoas) &&
+      p.realOrders > 0
+  );
+  if (candidates.length === 0) return false;
+  for (const p of candidates) {
+    if (p.id === entity.id) continue;
+    // Strictly greater ROAS → definitely not the top.
+    if ((p.realRoas as number) > entity.realRoas) return false;
+    // Equal ROAS but higher revenue → also not the top.
+    if (
+      (p.realRoas as number) === entity.realRoas &&
+      p.realRevenue > entity.realRevenue
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function pickBestChildAd(childAds: EntityPerformance[]): EntityPerformance | null {
+  let best: EntityPerformance | null = null;
+  for (const ad of childAds) {
+    if (ad.realRoas === null || !Number.isFinite(ad.realRoas)) continue;
+    if (ad.realOrders <= 0) continue;
+    if (best === null || (ad.realRoas as number) > (best.realRoas as number)) {
+      best = ad;
+    }
+  }
+  return best;
 }
 
 // ===========================================================================

@@ -80,6 +80,7 @@ export default function SalesDecisionPanel({
                   key={issue.id}
                   issue={issue}
                   narrative={narrative}
+                  attribution={data.decisions.attributionHealth}
                   onDismiss={(id) =>
                     setDismissed((prev) => {
                       const next = new Set(prev);

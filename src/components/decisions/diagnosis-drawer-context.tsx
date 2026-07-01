@@ -289,6 +289,7 @@ function Drawer({
                   key={issue.id}
                   issue={issue}
                   narrative={narrative}
+                  attribution={data.decisions.attributionHealth}
                 />
               );
             })}

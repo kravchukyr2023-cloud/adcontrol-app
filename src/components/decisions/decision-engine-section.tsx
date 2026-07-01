@@ -179,6 +179,7 @@ function FullDecisionView({
                 key={issue.id}
                 issue={issue}
                 narrative={narrative}
+                attribution={data.decisions.attributionHealth}
                 onDismiss={onDismiss}
               />
             );

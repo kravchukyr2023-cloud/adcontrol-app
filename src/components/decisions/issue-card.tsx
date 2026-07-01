@@ -1,9 +1,14 @@
 "use client";
 
 import type {
+  AttributionHealth,
   DecisionIssue,
   IssueNarrative,
 } from "@/server/decisions/types";
+import {
+  buildConfidenceNote,
+  buildRationale,
+} from "@/lib/decisions/confidence-context";
 
 /**
  * Stage 33b — pure, reusable Issue card. The Dashboard / Sales / project
@@ -43,12 +48,22 @@ const severityLabel: Record<Severity, string> = {
 export default function IssueCard({
   issue,
   narrative,
+  attribution,
   onDismiss,
 }: {
   issue: DecisionIssue;
   narrative: IssueNarrative;
+  /**
+   * Optional — when provided, powers the confidence-note tag next to the
+   * "орієнтовно" pill (Sprint 6.5 Stage 5). Absent = pill renders without
+   * the caveat, matching pre-Stage-5 behaviour.
+   */
+  attribution?: AttributionHealth | null;
   onDismiss?: (id: string) => void;
 }) {
+  const rationale = buildRationale(issue);
+  const confidenceNote =
+    issue.confidence === "low" ? buildConfidenceNote(attribution) : null;
   return (
     <article className="relative border border-[#1B2238] rounded-xl bg-black/30 overflow-hidden">
       {/* Left severity rail — quick scan colour without dominating the layout. */}
@@ -67,10 +82,24 @@ export default function IssueCard({
 
           {issue.confidence === "low" && (
             <span
-              title="Розрахунок спирається на неповний трекінг — це орієнтир."
-              className="text-[10px] uppercase tracking-wider border px-2 py-1 rounded shrink-0 self-start border-zinc-700/60 bg-zinc-700/20 text-zinc-300"
+              title={
+                confidenceNote
+                  ? `Розрахунок спирається на неповний трекінг — це орієнтир. ${confidenceNote}.`
+                  : "Розрахунок спирається на неповний трекінг — це орієнтир."
+              }
+              className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider border px-2 py-1 rounded shrink-0 self-start border-zinc-700/60 bg-zinc-700/20 text-zinc-300"
             >
-              орієнтовно
+              <span>орієнтовно</span>
+              {confidenceNote && (
+                <>
+                  <span aria-hidden className="text-zinc-500">
+                    ·
+                  </span>
+                  <span className="normal-case tracking-normal text-zinc-400 font-normal">
+                    {confidenceNote}
+                  </span>
+                </>
+              )}
             </span>
           )}
 
@@ -86,12 +115,18 @@ export default function IssueCard({
               </p>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mt-4 mb-5 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mt-4 mb-4 text-sm">
               <Section label="Impact" body={narrative.impact} />
               <Section label="Diagnosis" body={narrative.diagnosis} />
               <Section label="Action" body={narrative.action} />
               <Section label="Expected result" body={narrative.expectedResult} />
             </div>
+
+            {rationale && (
+              <p className="text-[11px] text-zinc-500 leading-snug mb-4">
+                {rationale}
+              </p>
+            )}
 
             <div className="flex items-center gap-2">
               <button

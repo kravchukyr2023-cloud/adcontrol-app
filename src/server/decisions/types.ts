@@ -155,6 +155,32 @@ export type DataCompleteness = {
   adsWithInsights: number;
   /** Human-readable note for the UI banner / AI prompt. */
   note: string;
+  /**
+   * True when at least one ad row in the snapshot carries a resolved
+   * `startDate` (Meta created_time / start_time). Enables recommendations
+   * that quote "працює N днів". Turned on in Sprint 6.5 Stage 1a.
+   */
+  hasAdStartDate: boolean;
+  /**
+   * True when creative bodies (primary_text, headline, image/video URL)
+   * are stored alongside `creative_name`. V2 — depends on a new Meta
+   * `/{creative_id}?fields=object_story_spec` fetch + a `meta_creatives`
+   * column. Until then, recommendations may only cite `creativeName`.
+   */
+  hasCreativeBody: boolean;
+  /**
+   * True when `meta_adsets.targeting` jsonb is parsed into
+   * age/gender/geo/interests fields the AI can quote verbatim. V2 —
+   * requires a targeting parser; the raw jsonb is already in the DB.
+   */
+  hasTargetingParsed: boolean;
+  /**
+   * True when `utm_content` is extracted per ad from the creative's URL
+   * params. V2 — piggybacks on the same creative fetch as
+   * `hasCreativeBody`. Until then, UTM-related advice stays generic
+   * ("налаштуй UTM") instead of quoting current values.
+   */
+  hasUtmContent: boolean;
 };
 
 export type MonthlySnapshot = {

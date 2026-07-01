@@ -445,6 +445,14 @@ export async function buildMonthlySnapshot(params: {
       totalAds,
       adsWithInsights,
       note: completenessNote,
+      // Dynamic: honest — false when no ad in the month carries a resolved
+      // startDate (e.g. Meta cache pre-Stage 1a, or all ads missing the
+      // timestamp). Rules in 1c can then skip "працює N днів" phrasing.
+      hasAdStartDate: adsOut.some((a) => a.startDate !== null),
+      // V2 static falses — flip when the enabling Meta fetch / parser lands.
+      hasCreativeBody: false,
+      hasTargetingParsed: false,
+      hasUtmContent: false,
     },
     computedAt: new Date().toISOString(),
   };
@@ -842,6 +850,12 @@ function emptySnapshot(args: {
       totalAds: 0,
       adsWithInsights: 0,
       note: "No active ad accounts wired to this project.",
+      // No ads → no startDate to quote. V2 flags stay off until enabling
+      // fetches land.
+      hasAdStartDate: false,
+      hasCreativeBody: false,
+      hasTargetingParsed: false,
+      hasUtmContent: false,
     },
     computedAt: new Date().toISOString(),
   };

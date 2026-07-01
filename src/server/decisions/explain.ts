@@ -65,18 +65,9 @@ const SYSTEM_PROMPT = `Ти — досвідчений медіа-байєр, я
 - expectedResult: чесний прогноз ефекту. Пиши конкретний прогноз ТІЛЬКИ якщо його можна вивести з наданих чисел. Якщо не можна — формулюй обережно ("залежить від того, чи підтвердиться трекінг реальними замовленнями", "ефект побачимо після наступного циклу оптимізації" тощо) БЕЗ вигаданих цифр і без обіцянок.
 
 MONTHLY PLAN:
-Спершу 2-4 речення огляду місяця мовою байєра. Тільки на основі totals і plan, які я дав. Якщо attribution reliable=false — обов'язково почни з застереження, що real-цифри неповні через трекінг і це орієнтири, а не остаточний вердикт. Тон той самий: спокійний профі, не аналітик-робот.
+monthlyPlan — 2-4 речення огляду місяця мовою байєра. Тільки на основі totals і plan, які я дав. Якщо attribution reliable=false — обов'язково почни з застереження, що real-цифри неповні через трекінг і це орієнтири, а не остаточний вердикт. Тон той самий: спокійний профі, не аналітик-робот.
 
-Далі, якщо issues не порожні — додай усередині того ж рядка monthlyPlan коротку секцію послідовності дій з окремого рядка:
-"Почни з цього:
-1. …
-2. …
-3. …"
-
-Правила секції "Почни з цього":
-- 2-4 пункти, у ТОМУ Ж порядку, як issues надані у вхідних даних. issues вже відсортовані движком за пріоритетом (M0/трекінг першим коли є, далі critical > warning > opportunity, всередині рівня — за грошима). Ти НЕ переставляєш їх сам, НЕ обираєш "цікавіші" — береш перші 2-4 у порядку списку.
-- Кожен пункт — коротка директива (одне речення) що зробити з цим issue, спираючись на його action. Числа/назви — з наданих даних, без вигадок.
-- Якщо issues порожні — секцію не додавай, лишається тільки огляд місяця.
+Твоя задача у monthlyPlan — тільки огляд. Не додавай списки дій, не пиши "Почни з цього", не нумеруй кроки — послідовність пріоритетів движок додасть сам після твого огляду.
 
 ФОРМАТ ВІДПОВІДІ:
 Поверни ЛИШЕ валідний JSON, без преамбул, без markdown-розмітки, без коментарів, без жодного тексту поза JSON:
@@ -124,10 +115,16 @@ export async function explainDecisions(args: {
     return fallbackExplanation(snapshot, decisions);
   }
 
-  const monthlyPlan =
+  // AI is responsible only for the overview prose. The "Почни з цього"
+  // priority sequence is deterministic (built from already-sorted issues)
+  // and appended on both AI-success and fallback paths — see Stage 3 fix:
+  // gpt-4o-mini reliably ignored the "Почни з цього" instruction, so we
+  // stopped asking it to produce that section at all.
+  const aiOverview =
     typeof parsed.monthlyPlan === "string" && parsed.monthlyPlan.trim().length > 0
       ? parsed.monthlyPlan.trim()
-      : fallbackMonthlyPlan(snapshot, decisions);
+      : fallbackOverview(snapshot, decisions);
+  const monthlyPlan = appendNextSteps(aiOverview, decisions);
 
   // Build narratives only for ids the rules engine actually emitted. For each
   // issue, missing fields are backfilled from the deterministic fallback so
@@ -201,7 +198,7 @@ function buildUserPrompt(
   lines.push("");
 
   lines.push(
-    `ISSUES (${decisions.issues.length}, вже відсортовані за пріоритетом — секція "Почни з цього" має слідувати цьому порядку):`
+    `ISSUES (${decisions.issues.length}, вже відсортовані за пріоритетом):`
   );
   if (decisions.issues.length === 0) {
     lines.push("  (none)");
@@ -309,9 +306,24 @@ function fallbackExplanation(
 }
 
 /**
- * Compact, all-numeric Ukrainian summary built from snapshot facts only.
+ * Full deterministic monthlyPlan: overview + "Почни з цього" sequence.
+ * Used on the fallback path (LLM offline / malformed JSON). On the AI path
+ * only `fallbackOverview` is used as a safety net when the LLM omits the
+ * overview text; `appendNextSteps` is always applied on top.
  */
 function fallbackMonthlyPlan(
+  snapshot: MonthlySnapshot,
+  decisions: DecisionResult
+): string {
+  return appendNextSteps(fallbackOverview(snapshot, decisions), decisions);
+}
+
+/**
+ * Compact, all-numeric Ukrainian overview built from snapshot facts only.
+ * No priority sequence here — that lives in `appendNextSteps` so both paths
+ * share the exact same list.
+ */
+function fallbackOverview(
   snapshot: MonthlySnapshot,
   decisions: DecisionResult
 ): string {
@@ -357,17 +369,27 @@ function fallbackMonthlyPlan(
     );
   }
 
-  const overview = parts.join(" ");
-  const nextSteps = fallbackNextSteps(decisions);
-  return nextSteps ? `${overview}\n\n${nextSteps}` : overview;
+  return parts.join(" ");
 }
 
 /**
- * Deterministic "Почни з цього" section built from the top 2-3 already-sorted
- * issues. Kept intentionally short — just enough that the drawer shows a real
- * priority sequence even without the LLM.
+ * Shared appender for both AI-success and fallback paths — guarantees the
+ * "Почни з цього" priority sequence is always present when issues exist,
+ * regardless of what the LLM did. The sequence follows the already-sorted
+ * issue order (M0-first → severity → impact ↓, see evaluate.ts).
  */
-function fallbackNextSteps(decisions: DecisionResult): string {
+function appendNextSteps(overview: string, decisions: DecisionResult): string {
+  const nextSteps = buildNextSteps(decisions);
+  if (!nextSteps) return overview;
+  const base = overview.trim();
+  return base.length > 0 ? `${base}\n\n${nextSteps}` : nextSteps;
+}
+
+/**
+ * Deterministic "Почни з цього" section from the top 2-3 already-sorted
+ * issues. Empty string when there are no issues.
+ */
+function buildNextSteps(decisions: DecisionResult): string {
   const top = decisions.issues.slice(0, 3);
   if (top.length === 0) return "";
   const lines: string[] = ["Почни з цього:"];

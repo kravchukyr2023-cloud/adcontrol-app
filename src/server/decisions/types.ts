@@ -88,6 +88,26 @@ export type EntityPerformance = {
   /** Parent IDs for drill-down. Null for campaigns; campaign/adset for ads. */
   parentCampaignId: string | null;
   parentAdsetId: string | null;
+
+  /**
+   * ISO date this entity started running.
+   *   campaign → meta_campaigns.created_time
+   *   adset    → meta_adsets.start_time ?? meta_adsets.created_time
+   *   ad       → meta_ads.created_time
+   * Null when Meta never provided the timestamp.
+   */
+  startDate: string | null;
+  /**
+   * Whole-day count from startDate (UTC) to today (UTC), clamped ≥ 0. Null
+   * when startDate is null. Consumers can render "працює N днів" without
+   * re-parsing dates.
+   */
+  daysRunning: number | null;
+  /**
+   * Meta creative_name, populated only for level='ad'. Null on campaign /
+   * adset rows and when the ad has no creative_name yet.
+   */
+  creativeName: string | null;
 };
 
 export type AdAccountRollup = {

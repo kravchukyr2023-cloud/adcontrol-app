@@ -110,7 +110,7 @@ export async function buildMonthlySnapshot(params: {
     admin
       .from("meta_campaigns")
       .select(
-        "id, campaign_name, effective_status, status, meta_ad_account_id"
+        "id, campaign_name, effective_status, status, meta_ad_account_id, created_time"
       )
       .in("meta_ad_account_id", aaUuids),
   ]);
@@ -131,6 +131,7 @@ export async function buildMonthlySnapshot(params: {
     effective_status: string | null;
     status: string | null;
     meta_ad_account_id: string | null;
+    created_time: string | null;
   };
 
   const aaNameById = new Map<string, string>();
@@ -157,7 +158,7 @@ export async function buildMonthlySnapshot(params: {
         admin
           .from("meta_adsets")
           .select(
-            "id, adset_name, effective_status, status, meta_campaign_id_fk"
+            "id, adset_name, effective_status, status, meta_campaign_id_fk, start_time, created_time"
           )
           .in("meta_campaign_id_fk", campaignIds),
         admin
@@ -211,7 +212,7 @@ export async function buildMonthlySnapshot(params: {
       admin
         .from("meta_ads")
         .select(
-          "id, ad_name, effective_status, status, meta_adset_id_fk"
+          "id, ad_name, effective_status, status, meta_adset_id_fk, created_time, creative_name"
         )
         .in("meta_adset_id_fk", adsetIds),
       admin
@@ -315,6 +316,8 @@ export async function buildMonthlySnapshot(params: {
         orders: ordersByCampaign.get(campaignId),
         parentCampaignId: null,
         parentAdsetId: null,
+        startDate: c.created_time,
+        creativeName: null,
       })
     );
   }
@@ -339,6 +342,8 @@ export async function buildMonthlySnapshot(params: {
         orders: ordersByAdset.get(adsetId),
         parentCampaignId: ad.meta_campaign_id_fk,
         parentAdsetId: null,
+        startDate: ad.start_time ?? ad.created_time,
+        creativeName: null,
       })
     );
   }
@@ -366,6 +371,8 @@ export async function buildMonthlySnapshot(params: {
         orders: ordersByAd.get(adId),
         parentCampaignId: campaign?.id ?? null,
         parentAdsetId: adset?.id ?? null,
+        startDate: ad.created_time,
+        creativeName: ad.creative_name,
       })
     );
   }
@@ -589,6 +596,8 @@ type AdsetRow = {
   effective_status: string | null;
   status: string | null;
   meta_campaign_id_fk: string | null;
+  start_time: string | null;
+  created_time: string | null;
 };
 type AdRow = {
   id: string;
@@ -596,6 +605,8 @@ type AdRow = {
   effective_status: string | null;
   status: string | null;
   meta_adset_id_fk: string | null;
+  created_time: string | null;
+  creative_name: string | null;
 };
 type CampaignInsightRow = {
   meta_campaign_id_fk: string | null;
@@ -700,6 +711,10 @@ function buildEntity(args: {
   orders: OrderBucket | undefined;
   parentCampaignId: string | null;
   parentAdsetId: string | null;
+  /** Raw ISO/timestamptz string from the source column, or null. */
+  startDate: string | null;
+  /** Only ads carry a creative_name; campaigns/adsets pass null. */
+  creativeName: string | null;
 }): EntityPerformance {
   const ins = args.insights ?? {
     spend: 0,
@@ -711,6 +726,7 @@ function buildEntity(args: {
   const ord = args.orders;
   const realRevenue = ord?.revenue ?? 0;
   const realOrders = ord?.orders ?? 0;
+  const { startDate, daysRunning } = deriveRuntime(args.startDate);
   return {
     id: args.id,
     name: args.name,
@@ -737,7 +753,46 @@ function buildEntity(args: {
     },
     parentCampaignId: args.parentCampaignId,
     parentAdsetId: args.parentAdsetId,
+    startDate,
+    daysRunning,
+    creativeName: args.creativeName,
   };
+}
+
+/**
+ * Normalises a Meta timestamptz string to an ISO date (YYYY-MM-DD) and
+ * counts whole UTC days between it and today. Both fields go null together
+ * when the source is missing or unparseable — consumers only need to guard
+ * one. daysRunning is clamped ≥ 0 so an ad Meta post-dates into the future
+ * doesn't produce a negative "працює -N днів".
+ */
+function deriveRuntime(raw: string | null): {
+  startDate: string | null;
+  daysRunning: number | null;
+} {
+  if (!raw) return { startDate: null, daysRunning: null };
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return { startDate: null, daysRunning: null };
+  }
+  const startUtcMidnight = Date.UTC(
+    parsed.getUTCFullYear(),
+    parsed.getUTCMonth(),
+    parsed.getUTCDate()
+  );
+  const now = new Date();
+  const todayUtcMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  );
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysRunning = Math.max(
+    0,
+    Math.floor((todayUtcMidnight - startUtcMidnight) / dayMs)
+  );
+  const startDate = new Date(startUtcMidnight).toISOString().slice(0, 10);
+  return { startDate, daysRunning };
 }
 
 function buildCompletenessNote(coverage: number, totalAds: number): string {

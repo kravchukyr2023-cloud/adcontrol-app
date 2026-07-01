@@ -203,12 +203,12 @@ function ruleMonthlyRevenueUndershoot(
           value: neededPerDay !== null ? round2(neededPerDay) : null,
         },
       ],
-      recommendedAction:
-        neededPerDay !== null && neededPerDay > 0
-          ? `To hit plan, real revenue needs to average ${round2(
-              neededPerDay
-            )} / day over the remaining ${daysLeft} day(s).`
-          : "Plan window closing — reassess monthly target or pull forward higher-ROAS spend.",
+      recommendedAction: buildRevenueUndershootAction({
+        dayOfMonth: plan.dayOfMonth,
+        realRevenue: actual,
+        proRatedTarget: plan.proRatedTargetRevenue,
+        ratio,
+      }),
       impact: gap,
       confidence: "high",
     },
@@ -239,8 +239,10 @@ function ruleMonthlyRoasFloor(snapshot: MonthlySnapshot): DecisionIssue[] {
         { label: "Spend MTD", value: round2(totals.spend) },
         { label: "Real revenue MTD", value: round2(totals.realRevenue) },
       ],
-      recommendedAction:
-        "Шукай дві-три кампанії що з'їдають бюджет без real-продажів і паузь або переналаштовуй.",
+      recommendedAction: buildRoasFloorAction({
+        realRoas: totals.realRoas,
+        targetRoas: plan.targetRoas,
+      }),
       impact: totals.spend,
       confidence: "high",
     },
@@ -281,8 +283,13 @@ function ruleCampaignBurnedBudget(
         { label: "Impressions", value: c.impressions },
         { label: "Effective status", value: c.effectiveStatus },
       ],
-      recommendedAction:
-        "Перевір UTM-розмітку оголошень кампанії; якщо трекінг цілий — постав на паузу або зміни таргет.",
+      recommendedAction: buildBurnedBudgetAction({
+        campaignName: c.name,
+        spend: c.spend,
+        share,
+        daysRunning: c.daysRunning,
+        hasAdStartDate: snapshot.dataCompleteness.hasAdStartDate,
+      }),
       impact: c.spend,
       confidence: "high",
     });
@@ -389,8 +396,12 @@ function ruleAdsetWeakLink(snapshot: MonthlySnapshot): DecisionIssue[] {
         { label: "Real orders", value: worst.realOrders },
         { label: "Adsets compared", value: scored.length },
       ],
-      recommendedAction:
-        "Порівняй креативи/таргет з кращими адсетами кампанії — або перерозподіли бюджет.",
+      recommendedAction: buildAdsetWeakLinkAction({
+        adsetName: worst.name,
+        campaignName: campaignNameById.get(campaignId) ?? null,
+        adsetRoas: worst.realRoas,
+        avgRoas,
+      }),
       impact: worst.spend,
       confidence: "high",
       parentContext: campaignNameById.get(campaignId) ?? undefined,
@@ -445,8 +456,10 @@ function ruleAdOpportunity(snapshot: MonthlySnapshot): DecisionIssue[] {
         { label: "Real orders", value: best.realOrders },
         { label: "Spend", value: round2(best.spend) },
       ],
-      recommendedAction:
-        "Розглянь масштабування — підняти денний бюджет адсета або задублювати найкращий креатив.",
+      recommendedAction: buildAdOpportunityAction({
+        adName: best.name,
+        realRoas: best.realRoas,
+      }),
       impact: best.realRevenue,
       confidence: "high",
       parentContext: parentLabel,
@@ -491,6 +504,116 @@ function buildTrackingGapAction(args: {
     `Задача:`,
     `1. Протестуй мітки на ${scopeHint} — переконайся що UTM доходять після оформлення покупки.`,
     `2. Переглянь у Meta розділ Events Manager — на яку саме дію ${emScope}стоїть подія «Purchase» і чи нема помилки в її налаштуванні.`,
+  ].join("\n");
+}
+
+/**
+ * M1 — monthly revenue undershoot. Frames "де ми зараз проти плану" in one
+ * sentence, then the fixed 3-step optimisation checklist. Percent is
+ * rendered as an integer so the AI layer can't decimal-format it.
+ */
+function buildRevenueUndershootAction(args: {
+  dayOfMonth: number;
+  realRevenue: number;
+  proRatedTarget: number;
+  ratio: number;
+}): string {
+  const revenue = round2(args.realRevenue);
+  const target = round2(args.proRatedTarget);
+  const pct = Math.round(args.ratio * 100);
+  return [
+    `Діагноз: на день ${args.dayOfMonth} real-виторг ${revenue} — це ${pct}% планового темпу (пропорційна ціль ${target}). Real-виторг відстає.`,
+    `Задача:`,
+    `1. Проаналізуй топ-2-3 кампанії за real ROAS — знайди найприбутковіші.`,
+    `2. Масштабуй їх (підніми бюджет на найкращі).`,
+    `3. Перевір чи слабкі кампанії не з'їдають бюджет даремно.`,
+  ].join("\n");
+}
+
+/**
+ * M2 — monthly real ROAS below floor. The extra 3rd step nudges the reader
+ * to sanity-check tracking before mass-pausing when Meta looks fine but
+ * real ROAS is suspiciously low.
+ */
+function buildRoasFloorAction(args: {
+  realRoas: number;
+  targetRoas: number;
+}): string {
+  const real = round2(args.realRoas).toFixed(2);
+  const target = round2(args.targetRoas).toFixed(2);
+  return [
+    `Діагноз: real ROAS ×${real} нижче цільового ×${target}. Реклама не окуповується на потрібному рівні.`,
+    `Задача:`,
+    `1. Знайди кампанії/адсети з real ROAS нижче цілі — вони тягнуть середнє.`,
+    `2. Перерозподіли бюджет з них на прибуткові.`,
+    `3. Якщо real ROAS підозріло низький при добрих Meta-показниках — спершу перевір трекінг (мітки/події).`,
+  ].join("\n");
+}
+
+/**
+ * C1 — burned campaign budget. daysRunning is only cited when the
+ * dataCompleteness flag confirms the snapshot actually carries ad start
+ * dates (Stage 1a), so pre-1a caches don't produce "працює null днів".
+ */
+function buildBurnedBudgetAction(args: {
+  campaignName: string;
+  spend: number;
+  share: number;
+  daysRunning: number | null;
+  hasAdStartDate: boolean;
+}): string {
+  const spend = round2(args.spend);
+  const sharePct = Math.round(args.share * 100);
+  const daysClause =
+    args.hasAdStartDate && args.daysRunning !== null
+      ? ` (працює ${args.daysRunning} ${pluralUa(args.daysRunning, "день", "дні", "днів")})`
+      : "";
+  return [
+    `Діагноз: кампанія «${args.campaignName}» витратила ${spend} без жодного підтвердженого real-продажу${daysClause}. Це ≈${sharePct}% місячного бюджету.`,
+    `Задача:`,
+    `1. Перевір UTM цієї кампанії на тестовій заявці — можливо продажі є, але не трекаються.`,
+    `2. Якщо трекінг цілий і продажів справді нема — постав на паузу, звільни ≈${sharePct}% бюджету на прибуткові кампанії.`,
+  ].join("\n");
+}
+
+/**
+ * A1 — adset weak link. Names the parent campaign inline when we know it
+ * (A1 already resolves it for parentContext) so the reader can jump
+ * straight to the right adset list.
+ */
+function buildAdsetWeakLinkAction(args: {
+  adsetName: string;
+  campaignName: string | null;
+  adsetRoas: number;
+  avgRoas: number;
+}): string {
+  const roas = round2(args.adsetRoas).toFixed(2);
+  const avg = round2(args.avgRoas).toFixed(2);
+  const campaignClause = args.campaignName
+    ? ` у кампанії «${args.campaignName}»`
+    : "";
+  return [
+    `Діагноз: адсет «${args.adsetName}»${campaignClause} має real ROAS ×${roas} проти ×${avg} по кампанії — тягне середню окупність вниз.`,
+    `Задача:`,
+    `1. Зменш бюджет цього адсета або вимкни його.`,
+    `2. Перелий бюджет на сильніші адсети цієї кампанії.`,
+  ].join("\n");
+}
+
+/**
+ * AD1 — best ad opportunity, Dashboard-side. Deliberately short: the full
+ * scale-recipe already lives in the Meta Ads drawer (Stage 1c group 2),
+ * so here we surface the signal and point to the drawer instead of
+ * duplicating the recipe text.
+ */
+function buildAdOpportunityAction(args: {
+  adName: string;
+  realRoas: number;
+}): string {
+  const roas = round2(args.realRoas).toFixed(2);
+  return [
+    `Діагноз: оголошення «${args.adName}» — найкращий real ROAS ×${roas} серед оголошень. Є запас для масштабування.`,
+    `Задача: Відкрий це оголошення в розділі Meta Ads — там повний покроковий рецепт масштабування (винести в окрему кампанію, нові креативи, тест 2-3 дні).`,
   ].join("\n");
 }
 

@@ -3,6 +3,7 @@ import { getAdminSupabase } from "@/server/meta/admin-supabase";
 import { buildMonthlySnapshot } from "@/server/decisions/monthly-snapshot";
 import { evaluateSnapshot } from "@/server/decisions/evaluate";
 import { explainDecisions } from "@/server/decisions/explain";
+import { polishEntities } from "@/server/decisions/polish-entities";
 import {
   currentMonthKey,
   saveExplanation,
@@ -159,7 +160,18 @@ export async function GET(req: NextRequest) {
         projectId: project.id,
       });
       const decisions = evaluateSnapshot(snapshot);
-      const explanation = await explainDecisions({ snapshot, decisions });
+      let explanation = await explainDecisions({ snapshot, decisions });
+      // Stage 4 — drawer entity polish. Only paid for after the base
+      // explanation succeeded; polish failure is silent (drawer keeps
+      // the deterministic diagnosis).
+      let polishCount = 0;
+      if (explanation.llmUsed) {
+        const polish = await polishEntities({ snapshot, decisions });
+        if (polish) {
+          explanation = { ...explanation, entityPolish: polish };
+          polishCount = Object.keys(polish).length;
+        }
+      }
       // Cron mirrors the assemble guard: only persist real AI output.
       // If OpenAI is down at the cron window we just skip — tomorrow's
       // run or the next user request will try again. Caching a fallback
@@ -174,7 +186,7 @@ export async function GET(req: NextRequest) {
       }
       success += 1;
       console.log(
-        `[cron/decisions] project=${project.id} status=ok llm=${explanation.llmUsed} issues=${decisions.summary.totalIssues}`
+        `[cron/decisions] project=${project.id} status=ok llm=${explanation.llmUsed} issues=${decisions.summary.totalIssues} polish=${polishCount}`
       );
     } catch (err) {
       errors += 1;

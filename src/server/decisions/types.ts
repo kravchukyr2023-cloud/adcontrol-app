@@ -287,8 +287,8 @@ export type IssueNarrative = {
  * `Record<string, IssueNarrative>` (v2). The cache reader treats any row
  * whose `schemaVersion` mismatches as a miss → next read regenerates fresh.
  */
-// 7 — Stage 3 fix: clean Почни з цього steps
-export const EXPLANATION_SCHEMA_VERSION = 7;
+// 8 — Stage 4: drawer entity polish
+export const EXPLANATION_SCHEMA_VERSION = 8;
 
 /**
  * Human-readable explanation layer over a DecisionResult.
@@ -307,6 +307,14 @@ export type DecisionExplanation = {
   monthlyPlan: string;
   /** Per-issue 4-section narratives, keyed by DecisionIssue.id. */
   issueExplanations: Record<string, IssueNarrative>;
+  /**
+   * Optional 1-2 sentence buyer-voice polish per entity, keyed by
+   * `${level}:${entityId}`. Populated during cron for "meaningful" entities
+   * only: winners (scaleRecipe fired) or entities linked to an issue. The
+   * drawer renders it ABOVE the deterministic diagnosis; absence just means
+   * "no polish this month" — the deterministic layer still ships.
+   */
+  entityPolish?: Record<string, string>;
   /** ISO timestamp. */
   generatedAt: string;
   /** False when the AI was unavailable and we returned a template. */

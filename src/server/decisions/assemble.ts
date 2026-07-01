@@ -2,6 +2,7 @@ import "server-only";
 import { buildMonthlySnapshot } from "@/server/decisions/monthly-snapshot";
 import { evaluateSnapshot } from "@/server/decisions/evaluate";
 import { explainDecisions } from "@/server/decisions/explain";
+import { polishEntities } from "@/server/decisions/polish-entities";
 import {
   currentMonthKey,
   getCachedExplanation,
@@ -66,6 +67,15 @@ export async function assembleDecisions(args: {
 
   if (!explanation) {
     explanation = await explainDecisions({ snapshot, decisions });
+    // Sprint 6.5 Stage 4 — drawer entity polish. Runs only after we got a
+    // real AI explanation (no point paying for polish tokens if the base
+    // explanation itself fell back). A polish failure is silent: the drawer
+    // falls back to the deterministic diagnosis for that entity, so we
+    // still cache the base explanation on `llmUsed=true`.
+    if (explanation.llmUsed) {
+      const polish = await polishEntities({ snapshot, decisions });
+      if (polish) explanation = { ...explanation, entityPolish: polish };
+    }
     // Only cache real AI output. A transient LLM outage (timeout, 5xx,
     // rate limit) would otherwise persist a deterministic fallback for
     // the whole month, and every subsequent page-load would serve the

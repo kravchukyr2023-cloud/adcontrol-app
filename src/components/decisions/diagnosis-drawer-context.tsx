@@ -295,9 +295,20 @@ function Drawer({
 
           {/* Always-on entity diagnosis. Sits below issues so the rule
               signals stay primary, but is never absent for an entity with
-              activity — the previous "no signals" empty state is gone. */}
+              activity — the previous "no signals" empty state is gone.
+              Sprint 6.5 Stage 4 — pass optional buyer-voice polish from
+              the cache (pre-generated in cron for meaningful entities).
+              Absent = drawer keeps the deterministic summary, no visible
+              difference vs pre-Stage-4. */}
           {projectId && !loading && !error && data && diagnosis && (
-            <EntityDiagnosisCard diagnosis={diagnosis} />
+            <EntityDiagnosisCard
+              diagnosis={diagnosis}
+              polish={
+                data.explanation.entityPolish?.[
+                  `${entity.level}:${entity.id}`
+                ] ?? null
+              }
+            />
           )}
 
           {projectId && !loading && !error && data && !entityPerf && (

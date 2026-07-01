@@ -19,11 +19,20 @@ import type {
 
 export default function EntityDiagnosisCard({
   diagnosis,
+  polish,
 }: {
   diagnosis: EntityDiagnosis;
+  /**
+   * Optional buyer-voice polish (Sprint 6.5 Stage 4). When present, replaces
+   * the deterministic one-line summary in the card header. The deterministic
+   * metrics / verdicts / scale recipe stay verbatim — polish just softens
+   * the top-line prose.
+   */
+  polish?: string | null;
 }) {
   const { metrics, trafficVerdict, salesVerdict, summary, scaleRecipe } =
     diagnosis;
+  const headerText = polish?.trim() || summary;
 
   return (
     <article className="border border-[#1B2238] rounded-xl bg-black/30 overflow-hidden">
@@ -31,7 +40,9 @@ export default function EntityDiagnosisCard({
         <span className="inline-flex items-center text-[10px] uppercase tracking-wider border px-2 py-1 rounded shrink-0 border-[#6D5EF8]/40 bg-[#6D5EF8]/10 text-violet-300">
           Діагноз
         </span>
-        <p className="text-sm text-zinc-200 leading-snug">{summary}</p>
+        <p className="text-sm text-zinc-200 leading-snug whitespace-pre-line">
+          {headerText}
+        </p>
       </div>
 
       <div className="px-5 py-4 space-y-5">

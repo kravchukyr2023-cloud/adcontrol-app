@@ -148,8 +148,10 @@ function ruleAttributionHealth(
         { label: "Meta-reported purchases MTD", value: metaPurchases },
         { label: "Unconfirmed Meta purchases", value: missing },
       ],
-      recommendedAction:
-        "Налаштуй UTM-розмітку на оголошеннях (utm_source = Campaign, utm_medium = Adset, utm_campaign = Ad), щоб real-аналіз був точним.",
+      recommendedAction: buildTrackingGapAction({
+        metaPurchases,
+        realOrders,
+      }),
       // Impact ≈ purchases the tracker is missing — scale of the data
       // we can't trust.
       impact: missing,
@@ -318,9 +320,14 @@ function ruleMetaOverstates(snapshot: MonthlySnapshot): DecisionIssue[] {
         { label: "Spend MTD", value: round2(c.spend) },
         { label: "Real revenue", value: round2(c.realRevenue) },
         { label: "Meta revenue", value: round2(c.metaRevenue) },
+        { label: "Meta-reported purchases MTD", value: c.purchases },
+        { label: "Real orders MTD", value: c.realOrders },
       ],
-      recommendedAction:
-        "Звір real-продажі за UTM з Meta — якщо розрив підтверджується, перенаправ бюджет на real-прибуткові кампанії.",
+      recommendedAction: buildTrackingGapAction({
+        campaignName: c.name,
+        metaPurchases: c.purchases,
+        realOrders: c.realOrders,
+      }),
       impact: c.spend,
       confidence: "high",
     });
@@ -450,6 +457,57 @@ function ruleAdOpportunity(snapshot: MonthlySnapshot): DecisionIssue[] {
 // ===========================================================================
 // Helpers.
 // ===========================================================================
+
+/**
+ * Shared "Діагноз + Задача" recommendation body for the tracking-gap issues
+ * (M0 at month level, C2 at campaign level). The месседж is the same — Meta
+ * shows more purchases than orders confirms, which is either a UTM leak or a
+ * misconfigured Purchase event in Events Manager. C2 additionally prefixes
+ * the specific campaign name so the operator knows where to look first.
+ *
+ * Kept in one place so tone / wording drift can't sneak in between the two
+ * rules; the AI layer (Stage 31) is instructed never to rephrase facts, so
+ * this text is what the reader sees verbatim in the drawer.
+ */
+function buildTrackingGapAction(args: {
+  metaPurchases: number;
+  realOrders: number;
+  /** Present for C2 (campaign-level). Omitted for M0 (month-level). */
+  campaignName?: string;
+}): string {
+  const meta = Math.max(0, Math.round(args.metaPurchases));
+  const real = Math.max(0, Math.round(args.realOrders));
+  const metaWord = pluralUa(meta, "продаж", "продажі", "продажів");
+  const realWord = pluralUa(real, "продаж", "продажі", "продажів");
+  const header = args.campaignName
+    ? `Кампанія «${args.campaignName}»: Meta показує ${meta} ${metaWord}, реально ${real} ${realWord}.`
+    : `Meta показує ${meta} ${metaWord}, реально підтверджено ${real} ${realWord}.`;
+  const scopeHint = args.campaignName
+    ? "тестовій заявці цієї кампанії"
+    : "тестовій заявці";
+  const emScope = args.campaignName ? "у цій кампанії " : "";
+  return [
+    `Діагноз: ${header} Такий розрив означає одне з двох: або мітки (UTM) не передаються після покупки, або в Meta подія «Purchase» налаштована не на ту дію.`,
+    `Задача:`,
+    `1. Протестуй мітки на ${scopeHint} — переконайся що UTM доходять після оформлення покупки.`,
+    `2. Переглянь у Meta розділ Events Manager — на яку саме дію ${emScope}стоїть подія «Purchase» і чи нема помилки в її налаштуванні.`,
+  ].join("\n");
+}
+
+/**
+ * Ukrainian plural picker: 1 → one, 2–4 → few, 5+ / 11–14 → many. Mirrors
+ * the private helper in src/lib/decisions/entity-diagnosis.ts — kept local
+ * so server rules don't reach into the client lib layer.
+ */
+function pluralUa(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
 function pushAll<T>(target: T[], items: T[]): void {
   for (const i of items) target.push(i);
 }

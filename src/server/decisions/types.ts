@@ -287,7 +287,10 @@ export type IssueNarrative = {
  * `Record<string, IssueNarrative>` (v2). The cache reader treats any row
  * whose `schemaVersion` mismatches as a miss → next read regenerates fresh.
  */
-export const EXPLANATION_SCHEMA_VERSION = 2;
+// 3 — Sprint 6.5 Stage 1c: practical action format (Діагноз + Задача) for
+// M0/C2. Bump forces getCachedExplanation to treat prior rows as a miss so
+// the drawer regenerates with the new wording immediately.
+export const EXPLANATION_SCHEMA_VERSION = 3;
 
 /**
  * Human-readable explanation layer over a DecisionResult.

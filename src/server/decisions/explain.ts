@@ -400,25 +400,44 @@ function buildNextSteps(decisions: DecisionResult): string {
 }
 
 /**
- * One-line directive per issue for the fallback next-steps list. Prefers the
- * first sentence of recommendedAction (that's already a "Задача" line from
- * the rules engine); falls back to the issue title if the action is too terse.
+ * One-line directive per issue for the "Почни з цього" list. Extracts the
+ * first concrete Задача step from recommendedAction (which is Ukrainian and
+ * actually actionable) and drops the leading "N. " numbering so it composes
+ * cleanly inside the outer numbered list. issue.title is deliberately NOT
+ * used — rules currently emit English titles ("UTM tracking coverage is
+ * low"), which would break the Ukrainian narrative. entityName (real
+ * campaign / adset / ad names) is appended in parens when present.
+ *
+ * Real recommendedAction shape produced by rules.ts:
+ *   Діагноз: …<newline>Задача:<newline>1. …<newline>2. …
+ * Kроки are \n-separated. The previous version split by sentence delimiters,
+ * so the first "sentence" of "1. Протестуй…" was just "1." → the drawer
+ * showed a stub "1." with no directive.
  */
 function shortStep(issue: DecisionIssue): string {
-  const entity = issue.entityName ? ` — ${issue.entityName}` : "";
-  const action = issue.recommendedAction.trim();
-  // Strip leading "Діагноз: …" preface if present so the step starts with the
-  // actionable "Задача: …" bit the buyer needs to see first.
+  const action = issue.recommendedAction;
   const taskIdx = action.indexOf("Задача:");
-  const tail = taskIdx >= 0 ? action.slice(taskIdx + "Задача:".length).trim() : action;
-  // Take the first sentence / step to keep the line tight.
-  const firstSentence = tail.split(/(?<=[.!?])\s+/)[0]?.trim() ?? tail;
-  // Drop the "N." / "N)" step prefix so we don't get double numbering
-  // ("1. …title… 1. Підключи webhook") when this line lives inside the
-  // already-numbered "Почни з цього" list.
-  const withoutStepNumber = firstSentence.replace(/^\d+[.)]\s+/, "").trim();
-  const step = withoutStepNumber.length > 0 ? withoutStepNumber : issue.title;
-  return `${issue.title}${entity}. ${step}`;
+  const afterTask =
+    taskIdx >= 0
+      ? action.slice(taskIdx + "Задача:".length)
+      : action;
+  // Steps are \n-separated in rules.ts — take the first non-empty line.
+  const firstLine =
+    afterTask
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find((s) => s.length > 0) ?? "";
+  // Strip the "N." / "N)" step prefix so we don't get double numbering
+  // ("1. 1. Протестуй…") inside the outer "Почни з цього" list.
+  const step = firstLine.replace(/^\d+[.)]\s*/, "").trim();
+  const context = issue.entityName ? ` (${issue.entityName})` : "";
+  // Safety net: if the parser somehow returns nothing usable (a future rule
+  // with a totally different shape), fall back to entityName or issue.id so
+  // the drawer never renders a blank bullet.
+  if (step.length === 0) {
+    return issue.entityName ?? issue.id;
+  }
+  return `${step}${context}`;
 }
 
 // ===========================================================================

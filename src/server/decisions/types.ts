@@ -287,8 +287,8 @@ export type IssueNarrative = {
  * `Record<string, IssueNarrative>` (v2). The cache reader treats any row
  * whose `schemaVersion` mismatches as a miss → next read regenerates fresh.
  */
-// 4 — Sprint 6.5 Stage 2: buyer-voice prompt
-export const EXPLANATION_SCHEMA_VERSION = 4;
+// 5 — Sprint 6.5 Stage 3: prioritized action sequence
+export const EXPLANATION_SCHEMA_VERSION = 5;
 
 /**
  * Human-readable explanation layer over a DecisionResult.

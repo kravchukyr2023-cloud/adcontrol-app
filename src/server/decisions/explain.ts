@@ -65,7 +65,18 @@ const SYSTEM_PROMPT = `Ти — досвідчений медіа-байєр, я
 - expectedResult: чесний прогноз ефекту. Пиши конкретний прогноз ТІЛЬКИ якщо його можна вивести з наданих чисел. Якщо не можна — формулюй обережно ("залежить від того, чи підтвердиться трекінг реальними замовленнями", "ефект побачимо після наступного циклу оптимізації" тощо) БЕЗ вигаданих цифр і без обіцянок.
 
 MONTHLY PLAN:
-2-4 речення огляду місяця мовою байєра. Тільки на основі totals і plan, які я дав. Якщо attribution reliable=false — обов'язково почни з застереження, що real-цифри неповні через трекінг і це орієнтири, а не остаточний вердикт. Тон той самий: спокійний профі, не аналітик-робот.
+Спершу 2-4 речення огляду місяця мовою байєра. Тільки на основі totals і plan, які я дав. Якщо attribution reliable=false — обов'язково почни з застереження, що real-цифри неповні через трекінг і це орієнтири, а не остаточний вердикт. Тон той самий: спокійний профі, не аналітик-робот.
+
+Далі, якщо issues не порожні — додай усередині того ж рядка monthlyPlan коротку секцію послідовності дій з окремого рядка:
+"Почни з цього:
+1. …
+2. …
+3. …"
+
+Правила секції "Почни з цього":
+- 2-4 пункти, у ТОМУ Ж порядку, як issues надані у вхідних даних. issues вже відсортовані движком за пріоритетом (M0/трекінг першим коли є, далі critical > warning > opportunity, всередині рівня — за грошима). Ти НЕ переставляєш їх сам, НЕ обираєш "цікавіші" — береш перші 2-4 у порядку списку.
+- Кожен пункт — коротка директива (одне речення) що зробити з цим issue, спираючись на його action. Числа/назви — з наданих даних, без вигадок.
+- Якщо issues порожні — секцію не додавай, лишається тільки огляд місяця.
 
 ФОРМАТ ВІДПОВІДІ:
 Поверни ЛИШЕ валідний JSON, без преамбул, без markdown-розмітки, без коментарів, без жодного тексту поза JSON:
@@ -189,7 +200,9 @@ function buildUserPrompt(
   lines.push(`  note: ${decisions.attributionHealth.note}`);
   lines.push("");
 
-  lines.push(`ISSUES (${decisions.issues.length}):`);
+  lines.push(
+    `ISSUES (${decisions.issues.length}, вже відсортовані за пріоритетом — секція "Почни з цього" має слідувати цьому порядку):`
+  );
   if (decisions.issues.length === 0) {
     lines.push("  (none)");
   }
@@ -344,7 +357,46 @@ function fallbackMonthlyPlan(
     );
   }
 
-  return parts.join(" ");
+  const overview = parts.join(" ");
+  const nextSteps = fallbackNextSteps(decisions);
+  return nextSteps ? `${overview}\n\n${nextSteps}` : overview;
+}
+
+/**
+ * Deterministic "Почни з цього" section built from the top 2-3 already-sorted
+ * issues. Kept intentionally short — just enough that the drawer shows a real
+ * priority sequence even without the LLM.
+ */
+function fallbackNextSteps(decisions: DecisionResult): string {
+  const top = decisions.issues.slice(0, 3);
+  if (top.length === 0) return "";
+  const lines: string[] = ["Почни з цього:"];
+  top.forEach((issue, i) => {
+    lines.push(`${i + 1}. ${shortStep(issue)}`);
+  });
+  return lines.join("\n");
+}
+
+/**
+ * One-line directive per issue for the fallback next-steps list. Prefers the
+ * first sentence of recommendedAction (that's already a "Задача" line from
+ * the rules engine); falls back to the issue title if the action is too terse.
+ */
+function shortStep(issue: DecisionIssue): string {
+  const entity = issue.entityName ? ` — ${issue.entityName}` : "";
+  const action = issue.recommendedAction.trim();
+  // Strip leading "Діагноз: …" preface if present so the step starts with the
+  // actionable "Задача: …" bit the buyer needs to see first.
+  const taskIdx = action.indexOf("Задача:");
+  const tail = taskIdx >= 0 ? action.slice(taskIdx + "Задача:".length).trim() : action;
+  // Take the first sentence / step to keep the line tight.
+  const firstSentence = tail.split(/(?<=[.!?])\s+/)[0]?.trim() ?? tail;
+  // Drop the "N." / "N)" step prefix so we don't get double numbering
+  // ("1. …title… 1. Підключи webhook") when this line lives inside the
+  // already-numbered "Почни з цього" list.
+  const withoutStepNumber = firstSentence.replace(/^\d+[.)]\s+/, "").trim();
+  const step = withoutStepNumber.length > 0 ? withoutStepNumber : issue.title;
+  return `${issue.title}${entity}. ${step}`;
 }
 
 // ===========================================================================

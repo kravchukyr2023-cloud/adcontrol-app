@@ -68,24 +68,37 @@ export function evaluateSnapshot(snapshot: MonthlySnapshot): DecisionResult {
     deduped.push(i);
   }
 
-  // Two-pass sort: M0 pinned to index 0, everything else by severity then
-  // descending impact. Stable across runs so the AI prompt sees a
-  // deterministic order.
+  // Sprint 6.5 Stage 3 — priority order:
+  //   1) M0 (attribution_health) is the root blocker — always index 0.
+  //      Until tracking is trusted, every real-based number is orientative.
+  //   2) severity: critical > warning > opportunity > info.
+  //   3) impact ($) descending inside the same severity — money decides
+  //      within a tier, never across tiers.
+  // Stable across runs so the AI prompt sees a deterministic order.
   deduped.sort((a, b) => {
-    if (a.ruleId === "M0_attribution_health" && b.ruleId !== "M0_attribution_health") return -1;
-    if (b.ruleId === "M0_attribution_health" && a.ruleId !== "M0_attribution_health") return 1;
+    const aIsM0 = a.ruleId === "M0_attribution_health";
+    const bIsM0 = b.ruleId === "M0_attribution_health";
+    if (aIsM0 && !bIsM0) return -1;
+    if (bIsM0 && !aIsM0) return 1;
     const sev = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
     if (sev !== 0) return sev;
-    const ai = a.impact ?? 0;
-    const bi = b.impact ?? 0;
-    return bi - ai;
+    return (b.impact ?? 0) - (a.impact ?? 0);
   });
 
-  // Capping: keep every critical, then fill with the rest up to MAX_ISSUES.
-  const criticals = deduped.filter((i) => i.severity === "critical");
-  const remainder = deduped.filter((i) => i.severity !== "critical");
-  const room = Math.max(MAX_ISSUES - criticals.length, 0);
-  const trimmed = [...criticals, ...remainder.slice(0, room)];
+  // Capping: pin M0 to the very top (it's a warning, so without this the
+  // critical-first split below would put criticals ahead of it). Then keep
+  // every remaining critical, then fill the rest up to MAX_ISSUES.
+  const m0 = deduped.find((i) => i.ruleId === "M0_attribution_health") ?? null;
+  const rest = m0 ? deduped.filter((i) => i.ruleId !== "M0_attribution_health") : deduped;
+  const criticals = rest.filter((i) => i.severity === "critical");
+  const remainder = rest.filter((i) => i.severity !== "critical");
+  const capExcludingM0 = Math.max(MAX_ISSUES - (m0 ? 1 : 0), 0);
+  const room = Math.max(capExcludingM0 - criticals.length, 0);
+  const trimmed = [
+    ...(m0 ? [m0] : []),
+    ...criticals,
+    ...remainder.slice(0, room),
+  ];
 
   const summary = {
     totalIssues: trimmed.length,

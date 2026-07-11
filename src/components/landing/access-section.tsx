@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function AccessSection() {
-  const t = en.access;
+export default function AccessSection({ t }: { t: Messages["access"] }) {
   return (
     <div className="acc" id="access">
       <div className="wrap ai">

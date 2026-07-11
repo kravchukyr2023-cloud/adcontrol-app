@@ -1,7 +1,6 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function LandingFooter() {
-  const t = en.footer;
+export default function LandingFooter({ t }: { t: Messages["footer"] }) {
   return (
     <footer className="landing-footer">
       <div className="wrap ft">

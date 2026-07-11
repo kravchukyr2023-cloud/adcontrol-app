@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function LandingHero() {
-  const t = en.hero;
-  const tbl = en.compareTable;
+export default function LandingHero({
+  hero,
+  tbl,
+}: {
+  hero: Messages["hero"];
+  tbl: Messages["compareTable"];
+}) {
   return (
     <div className="hero">
       <div className="wrap">
@@ -11,27 +15,27 @@ export default function LandingHero() {
           <div>
             <div className="eb rv">
               <i />
-              {t.badge}
+              {hero.badge}
             </div>
             <h1 className="landing-h1 rv">
-              {t.h1Before}
+              {hero.h1Before}
               <br />
-              {t.h1After}
-              <em>{t.h1Highlight}</em>
-              {t.h1End}
+              {hero.h1After}
+              <em>{hero.h1Highlight}</em>
+              {hero.h1End}
             </h1>
           </div>
           <div>
-            <p className="lede rv">{t.lede}</p>
+            <p className="lede rv">{hero.lede}</p>
             <div className="cta rv">
               <Link href="/auth" className="btn btn-p btn-lg">
-                {t.primaryCta}
+                {hero.primaryCta}
               </Link>
               <Link href="/auth" className="btn btn-g">
-                {t.secondaryCta}
+                {hero.secondaryCta}
               </Link>
             </div>
-            <div className="fine rv">{t.fine}</div>
+            <div className="fine rv">{hero.fine}</div>
           </div>
         </div>
 

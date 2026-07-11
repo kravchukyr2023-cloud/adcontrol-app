@@ -1,3 +1,6 @@
+import { getLocale } from "next-intl/server";
+import { getTypedMessages } from "@/i18n/get-typed-messages";
+import type { Locale } from "@/i18n/config";
 import LandingHeader from "@/components/landing/header";
 import LandingHero from "@/components/landing/hero";
 import NumbersStrip from "@/components/landing/numbers-strip";
@@ -11,20 +14,22 @@ import AccessSection from "@/components/landing/access-section";
 import LandingFooter from "@/components/landing/footer";
 import { RevealScript } from "@/components/landing/reveal-script";
 
-export default function Home() {
+export default async function Home() {
+  const m = await getTypedMessages();
+  const locale = (await getLocale()) as Locale;
   return (
     <>
-      <LandingHeader />
-      <LandingHero />
-      <NumbersStrip />
-      <HowItWorksSection />
-      <EngineSection />
-      <WhoItsForSection />
-      <DataSourcesSection />
-      <SecuritySection />
-      <FaqSection />
-      <AccessSection />
-      <LandingFooter />
+      <LandingHeader t={m.header} locale={locale} />
+      <LandingHero hero={m.hero} tbl={m.compareTable} />
+      <NumbersStrip items={m.numbersStrip} />
+      <HowItWorksSection t={m.howItWorks} />
+      <EngineSection t={m.engine} />
+      <WhoItsForSection t={m.whoItsFor} />
+      <DataSourcesSection t={m.dataSources} />
+      <SecuritySection t={m.security} />
+      <FaqSection t={m.faq} />
+      <AccessSection t={m.access} />
+      <LandingFooter t={m.footer} />
       <RevealScript />
     </>
   );

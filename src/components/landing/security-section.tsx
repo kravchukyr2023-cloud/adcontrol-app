@@ -1,7 +1,6 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function SecuritySection() {
-  const t = en.security;
+export default function SecuritySection({ t }: { t: Messages["security"] }) {
   return (
     <div className="sec" id="security">
       <div className="wrap">

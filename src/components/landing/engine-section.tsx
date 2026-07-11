@@ -1,7 +1,6 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function EngineSection() {
-  const t = en.engine;
+export default function EngineSection({ t }: { t: Messages["engine"] }) {
   return (
     <div className="sec" id="engine">
       <div className="wrap">

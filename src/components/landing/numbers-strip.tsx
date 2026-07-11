@@ -1,7 +1,10 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function NumbersStrip() {
-  const items = en.numbersStrip;
+export default function NumbersStrip({
+  items,
+}: {
+  items: Messages["numbersStrip"];
+}) {
   return (
     <div className="nums">
       <div className="wrap nb">

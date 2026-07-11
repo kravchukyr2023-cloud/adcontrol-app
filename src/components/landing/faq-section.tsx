@@ -1,7 +1,6 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function FaqSection() {
-  const t = en.faq;
+export default function FaqSection({ t }: { t: Messages["faq"] }) {
   return (
     <div className="sec" id="faq">
       <div className="wrap">

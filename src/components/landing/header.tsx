@@ -1,9 +1,16 @@
 import Link from "next/link";
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
+import type { Locale } from "@/i18n/config";
 import { Logo } from "@/components/logo";
+import { LocaleSwitcher } from "@/components/landing/locale-switcher";
 
-export default function LandingHeader() {
-  const t = en.header;
+export default function LandingHeader({
+  t,
+  locale,
+}: {
+  t: Messages["header"];
+  locale: Locale;
+}) {
   return (
     <nav className="landing-nav">
       <div className="wrap nv">
@@ -18,6 +25,7 @@ export default function LandingHeader() {
           <a href="#faq">{t.nav.faq}</a>
         </div>
         <div className="nr">
+          <LocaleSwitcher active={locale} />
           <Link href="/auth">{t.login}</Link>
           <Link href="/auth" className="btn btn-p">
             {t.cta}

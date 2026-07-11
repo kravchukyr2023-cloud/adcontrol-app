@@ -1,7 +1,10 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function DataSourcesSection() {
-  const t = en.dataSources;
+export default function DataSourcesSection({
+  t,
+}: {
+  t: Messages["dataSources"];
+}) {
   return (
     <div className="sec" id="sources">
       <div className="wrap">

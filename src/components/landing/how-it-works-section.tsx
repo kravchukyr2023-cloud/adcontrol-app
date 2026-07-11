@@ -1,7 +1,10 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function HowItWorksSection() {
-  const t = en.howItWorks;
+export default function HowItWorksSection({
+  t,
+}: {
+  t: Messages["howItWorks"];
+}) {
   return (
     <div className="sec" id="how">
       <div className="wrap">

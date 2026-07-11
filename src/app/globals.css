@@ -69,7 +69,7 @@
   --color-true: var(--true);
   --color-true-lit: var(--true-lit);
   --color-true-wash: var(--true-wash);
-  --font-sans: var(--font-instrument-sans);
+  --font-sans: var(--font-manrope);
   --font-mono: var(--font-ibm-plex-mono);
 }
 
@@ -84,7 +84,7 @@ html { scroll-behavior: smooth; }
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-instrument-sans), system-ui, sans-serif;
+  font-family: var(--font-manrope), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -132,6 +132,31 @@ body {
   font-size: 14px;
   font-weight: 500;
 }
+
+/* Locale switcher — sits inside .nr, styled to match nav rhythm.
+   13px per the spec; --ink-3 idle, --ink active. */
+.ls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ls-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink-3);
+  transition: color .16s;
+  letter-spacing: .2px;
+}
+.ls-btn:hover { color: var(--ink-2); }
+.ls-btn.active { color: var(--ink); }
+.ls-sep { color: var(--ink-3); }
+.ls[data-pending] .ls-btn { opacity: .6; }
 
 .btn {
   display: inline-flex;
@@ -625,7 +650,7 @@ body {
     letter-spacing: 1.4px;
     font-weight: 600;
     margin-bottom: 6px;
-    font-family: var(--font-instrument-sans), sans-serif;
+    font-family: var(--font-manrope), sans-serif;
   }
   .tr .c2::before { content: "META ADS SAYS"; color: var(--ink-3); }
   .tr .c3::before { content: "ADCONTROL SAYS"; color: var(--true-lit); }

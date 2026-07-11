@@ -1,7 +1,10 @@
-import { en } from "@/messages/en";
+import type { Messages } from "@/messages/en";
 
-export default function WhoItsForSection() {
-  const t = en.whoItsFor;
+export default function WhoItsForSection({
+  t,
+}: {
+  t: Messages["whoItsFor"];
+}) {
   return (
     <div className="sec" id="who">
       <div className="wrap">

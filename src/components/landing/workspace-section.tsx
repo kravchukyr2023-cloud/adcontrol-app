@@ -1,43 +1,7 @@
-const modules = [
-  {
-    icon: "⟡",
-    name: "Dashboard",
-    body: "Spend, revenue and decision signals in one operational view.",
-    chips: ["KPI", "Goals", "Alerts"],
-  },
-  {
-    icon: "◆",
-    name: "Meta Ads",
-    body: "Campaigns, ad sets and creatives with diagnostic context.",
-    chips: ["BM", "Accounts", "Creatives"],
-  },
-  {
-    icon: "◯",
-    name: "Sales & Attribution",
-    body: "Real orders matched against ad spend and campaigns.",
-    chips: ["Orders", "AOV", "Real ROAS"],
-  },
-  {
-    icon: "⊕",
-    name: "UTM Generator",
-    body: "Structured tagging so attribution actually works.",
-    chips: ["Presets", "Validation"],
-  },
-  {
-    icon: "✎",
-    name: "Data Sources",
-    body: "Meta, Shopify, Google Sheets connected as operational sources.",
-    chips: ["Meta", "Shopify", "Sheets"],
-  },
-  {
-    icon: "⚙",
-    name: "Business Control Center",
-    body: "Currency, timezone, monthly goals and sync intervals.",
-    chips: ["Goals", "Sync", "Plan"],
-  },
-];
+import { en } from "@/messages/en";
 
 export default function WorkspaceSection() {
+  const t = en.workspace;
   return (
     <section
       id="product"
@@ -47,15 +11,15 @@ export default function WorkspaceSection() {
 
         <div className="max-w-3xl mb-16">
           <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
-            The product
+            {t.label}
           </p>
           <h2 className="text-4xl lg:text-5xl font-bold leading-[1.1] tracking-tight">
-            One workspace. Spend, revenue, attribution, decisions.
+            {t.h2}
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {modules.map((m) => (
+          {t.modules.map((m) => (
             <div
               key={m.name}
               className="border border-zinc-800 rounded-2xl bg-zinc-950 p-6 flex flex-col"

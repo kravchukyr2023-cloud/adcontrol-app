@@ -1,15 +1,10 @@
 import Link from "next/link";
-
-const metrics = [
-  { l: "ROAS", v: "3.36" },
-  { l: "CPA", v: "$28" },
-  { l: "Revenue", v: "$41.9k" },
-  { l: "Spend", v: "$12.4k" },
-];
+import { en } from "@/messages/en";
 
 const bars = [40, 62, 48, 78, 55, 72, 88];
 
 export default function LandingHero() {
+  const t = en.hero;
   return (
     <section className="bg-[#090A0F] text-white border-b border-zinc-900">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-20 lg:py-28">
@@ -19,15 +14,15 @@ export default function LandingHero() {
           <div>
             <span className="inline-flex items-center gap-2 text-xs text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 px-3 py-1.5 rounded-full mb-8">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-              Marketing Operations Infrastructure
+              {t.badge}
             </span>
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight mb-6">
-              Run paid marketing as an operation, not a guess.
+              {t.h1}
             </h1>
 
             <p className="text-zinc-400 text-lg leading-relaxed max-w-xl mb-10">
-              Meta Ads, revenue, attribution and business targets in one operational workspace — for marketers, operators and agencies.
+              {t.sub}
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mb-10">
@@ -35,28 +30,29 @@ export default function LandingHero() {
                 href="/auth"
                 className="bg-white text-black px-5 py-3 rounded-xl font-medium hover:bg-zinc-200 transition"
               >
-                Start free
+                {t.primaryCta}
               </Link>
               <Link
                 href="/auth"
                 className="border border-zinc-700 text-zinc-200 px-5 py-3 rounded-xl hover:border-zinc-500 transition"
               >
-                View demo
+                {t.secondaryCta}
               </Link>
               <Link
                 href="/auth"
                 className="text-sm text-zinc-400 hover:text-white px-3 py-2 transition"
               >
-                Login →
+                {t.loginLink}
               </Link>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-              <span>Dashboard</span>
-              <span className="text-zinc-700">·</span>
-              <span>Meta Ads</span>
-              <span className="text-zinc-700">·</span>
-              <span>Sales & Attribution</span>
+              {t.tags.map((tag, i) => (
+                <span key={tag} className="flex items-center gap-3">
+                  {i > 0 && <span className="text-zinc-700">·</span>}
+                  <span>{tag}</span>
+                </span>
+              ))}
             </div>
           </div>
 
@@ -71,19 +67,19 @@ export default function LandingHero() {
                   <div className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                 </div>
                 <div className="flex-1 ml-3 h-5 bg-black/40 border border-zinc-800 rounded text-[10px] text-zinc-500 px-2 flex items-center">
-                  adcontrol.app/dashboard
+                  {t.mock.urlBar}
                 </div>
               </div>
 
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-4 gap-2">
-                  {metrics.map((m) => (
+                  {t.mock.metrics.map((m) => (
                     <div
-                      key={m.l}
-                      className="border border-zinc-800 rounded-lg p-2.5 bg-black/40"
+                      key={m.label}
+                      className={metricCardStyle(m.tone)}
                     >
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{m.l}</p>
-                      <p className="text-sm font-bold text-white mt-1">{m.v}</p>
+                      <p className={metricLabelStyle(m.tone)}>{m.label}</p>
+                      <p className={metricValueStyle(m.tone)}>{m.value}</p>
                     </div>
                   ))}
                 </div>
@@ -102,10 +98,10 @@ export default function LandingHero() {
 
                 <div className="border border-indigo-500/40 rounded-lg p-3 bg-indigo-500/5">
                   <p className="text-[10px] text-indigo-300 uppercase tracking-wide mb-1">
-                    Ad Decision Engine
+                    {t.mock.engineLabel}
                   </p>
                   <p className="text-xs text-white leading-relaxed">
-                    Retargeting campaigns are outperforming target ROAS. Scaling opportunity detected.
+                    {t.mock.engineText}
                   </p>
                 </div>
               </div>
@@ -118,4 +114,23 @@ export default function LandingHero() {
       </div>
     </section>
   );
+}
+
+function metricCardStyle(tone: string): string {
+  const base = "border rounded-lg p-2.5 bg-black/40";
+  if (tone === "meta") return `${base} border-zinc-800`;
+  if (tone === "real") return `${base} border-rose-500/40 bg-rose-500/5`;
+  return `${base} border-zinc-800`;
+}
+
+function metricLabelStyle(tone: string): string {
+  const base = "text-[10px] uppercase tracking-wide";
+  if (tone === "real") return `${base} text-rose-300`;
+  return `${base} text-zinc-500`;
+}
+
+function metricValueStyle(tone: string): string {
+  const base = "text-sm font-bold mt-1";
+  if (tone === "real") return `${base} text-rose-200`;
+  return `${base} text-white`;
 }

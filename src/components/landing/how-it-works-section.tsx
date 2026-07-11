@@ -1,13 +1,7 @@
-const steps = [
-  { n: "01", t: "Connect data", b: "Plug in Meta Ads, sales sources and attribution. Everything in one operational view." },
-  { n: "02", t: "Detect losses", b: "Find leaks the moment they happen — not at end-of-month review." },
-  { n: "03", t: "Diagnose problems", b: "Move from a metric to a cause: which campaign, which ad set, which creative." },
-  { n: "04", t: "Prioritize actions", b: "Most-impact moves first. No more random changes that cancel each other out." },
-  { n: "05", t: "Execute decisions", b: "Apply the change in the source platform with a clear audit trail." },
-  { n: "06", t: "Validate results", b: "Confirm the decision actually moved revenue, not just a dashboard number." },
-];
+import { en } from "@/messages/en";
 
 export default function HowItWorksSection() {
+  const t = en.howItWorks;
   return (
     <section
       id="how"
@@ -17,15 +11,15 @@ export default function HowItWorksSection() {
 
         <div className="max-w-3xl mb-16">
           <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
-            How it works
+            {t.label}
           </p>
           <h2 className="text-4xl lg:text-5xl font-bold leading-[1.1] tracking-tight">
-            From disconnected data to operational decisions.
+            {t.h2}
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {steps.map((s) => (
+          {t.steps.map((s) => (
             <div
               key={s.n}
               className="border border-zinc-800 rounded-2xl bg-zinc-950 p-7"

@@ -1,207 +1,284 @@
 /**
- * Sprint 7 stage 7.3 — landing copy source of truth.
+ * Sprint 7 — landing copy source of truth.
  *
- * Every string rendered on the public landing lives here. Components read
- * from this object; no hardcoded copy in JSX. Prepares the ground for a
- * proper i18n solution later in the sprint — swapping this file for a
- * locale-keyed one will be the whole migration.
+ * Every string rendered on the public landing lives here. Values are
+ * copied verbatim from adcontrol-landing-final.html, which is the
+ * approved design reference. Do not paraphrase.
  */
 
 export const en = {
   header: {
     logo: "AdControl",
     nav: {
-      product: "The product",
       howItWorks: "How it works",
-      access: "Early access",
-      security: "Security",
+      engine: "The engine",
+      whoItsFor: "Who it's for",
+      faq: "FAQ",
     },
-    login: "Login",
+    login: "Log in",
     cta: "Get access",
   },
 
   hero: {
-    badge: "Confirmed sales. Not Meta's reporting.",
-    h1: "Meta reports 315 purchases. You had 2.",
-    sub: "AdControl scores every campaign against confirmed orders — not platform numbers. It tells you where budget burns, what to scale, and what to do today. As tasks, not charts.",
+    badge: "OPTIMISE ON CONFIRMED SALES",
+    h1Before: "Optimise on the sales",
+    h1After: "you ",
+    h1Highlight: "actually made",
+    h1End: ".",
+    lede:
+      "AdControl matches every order back to the ad that produced it. You stop steering on the platform's estimate and start steering on numbers you can verify.",
     primaryCta: "Get access",
     secondaryCta: "See live demo",
-    loginLink: "Login →",
-    tags: ["Dashboard", "Meta Ads", "Sales & Attribution"],
-    mock: {
-      urlBar: "adcontrol.app/dashboard",
-      metrics: [
-        { label: "Meta ROAS", value: "6.42", tone: "meta" },
-        { label: "Real ROAS", value: "0.41", tone: "real" },
-        { label: "Real orders", value: "2", tone: "neutral" },
-        { label: "Spend", value: "$12.4k", tone: "neutral" },
-      ],
-      engineLabel: "Ad Decision Engine",
-      engineText:
-        "Meta reports 315 purchases. Confirmed real orders: 2. Pause and investigate before scaling.",
-    },
+    fine:
+      "Free while in early access. Works with Meta Ads, Shopify and Google Sheets.",
   },
 
-  problem: {
-    label: "Why your ROAS is fiction",
-    h2: "Meta grades its own homework. And it grades generously.",
-    cards: [
+  compareTable: {
+    campaignLabel: "CAMPAIGN",
+    campaignName: "Lookalike 1% — Skincare",
+    claimLabel: "META ADS SAYS",
+    claimName: "Estimated",
+    trueLabel: "ADCONTROL SAYS",
+    trueName: "Confirmed",
+    actionLabel: "WHAT YOU OPTIMISE ON",
+    rows: [
       {
-        title: "It counts purchases you didn't get",
-        body: "A view-through, a scroll-past, a click that never converted — Meta books it as a sale. Your bank account disagrees.",
-        color: "bg-indigo-500",
+        metric: "Purchases",
+        claim: "253",
+        trueVal: "186",
+        action: "Budget planned on the volume that actually converted.",
+        win: false,
       },
       {
-        title: "It takes credit for buyers you already had",
-        body: "Retargeting shows a 6x ROAS by claiming returning customers who were coming back anyway.",
-        color: "bg-cyan-500",
+        metric: "Revenue",
+        claim: "$121,000",
+        trueVal: "$98,400",
+        action: "Targets set on money that reached your account.",
+        win: false,
       },
       {
-        title: "Broken tracking hides the truth",
-        body: "When tags don't fire or the purchase event points at the wrong action, real numbers vanish — and nobody tells you.",
-        color: "bg-amber-500",
+        metric: "ROAS",
+        claim: "×3.03",
+        trueVal: "×2.46",
+        action: "Scaling decisions made on the true ratio, not an estimate.",
+        win: false,
       },
       {
-        title: "You scale on the fake number",
-        body: "The campaign Meta calls a winner is the one quietly eating your margin. You find out at month-end.",
-        color: "bg-rose-500",
+        metric: "Best ad",
+        claim: "not surfaced",
+        trueVal: "Serum 15s · ×5.00",
+        action: "The one ad genuinely worth scaling — found for you.",
+        win: true,
       },
     ],
+    footBefore: "Same campaign, two sets of numbers. ",
+    footHighlight: "You optimise on the right one.",
   },
+
+  numbersStrip: [
+    {
+      value: "×5.00",
+      tone: "true" as const,
+      desc:
+        "The ad genuinely worth scaling — surfaced for you, ranked by revenue impact.",
+    },
+    {
+      value: "$8,387",
+      tone: "ink" as const,
+      desc:
+        "Budget you get back from campaigns that look fine but sell nothing.",
+    },
+    {
+      value: "Real",
+      tone: "true" as const,
+      desc:
+        "ROAS on every campaign, ad set and ad — matched to confirmed orders.",
+    },
+    {
+      value: "0",
+      tone: "ink" as const,
+      desc:
+        "Guesses. Hard rules make the call. The model only puts it into words.",
+    },
+  ],
 
   howItWorks: {
-    label: "How it works",
-    h2: "Three steps to numbers you can trust.",
+    label: "HOW IT WORKS",
+    h2: "Three moves to numbers you can scale on.",
     steps: [
       {
-        n: "01",
-        t: "Connect ads and sales",
-        b: "Meta Ads on one side, confirmed orders from Shopify or Sheets on the other. UTM tags tie them together.",
+        index: "01 — CONNECT",
+        title: "Connect ads and sales",
+        body:
+          "Meta Ads on one side, confirmed orders from Shopify or Sheets on the other. UTM tags tie every sale back to the ad that produced it.",
       },
       {
-        n: "02",
-        t: "The engine scores every campaign",
-        b: "Deterministic rules — not a chatbot guessing. Real ROAS, real orders, attribution health, per campaign, ad set and ad.",
+        index: "02 — MATCH",
+        title: "Get your true numbers",
+        body:
+          "Real ROAS on every campaign, ad set and ad — built from orders that landed, not from platform estimates.",
       },
       {
-        n: "03",
-        t: "You get tasks, not charts",
-        b: "Pause this. Scale that. Fix this tracking gap. Ranked by revenue impact, with the numbers behind each call.",
+        index: "03 — SCALE",
+        title: "Act on them",
+        body:
+          "Scale this. Hold that. Fix this gap. Ranked by revenue impact, each with the numbers behind the call.",
       },
     ],
   },
 
-  decisionEngine: {
-    label: "The engine",
-    h2: "Deterministic rules. Not a chatbot guessing.",
-    body: "The engine decides what to recommend — hard-coded rules over confirmed sales. AI only puts it in plain language. It never invents a number or a verdict.",
-    signals: [
-      "Where budget is burning",
-      "What is safe to scale",
-      "Where Meta overstates",
-      "What to fix first",
-    ],
-    mock: {
-      alert: "Revenue leak detected",
-      title: "Campaign overspending against zero attributed revenue",
-      signalLabel: "Signal",
-      signalText: "Spend +18% this week, real ROAS dropped from 2.9 to 0.6.",
-      diagnosisLabel: "Diagnosis",
-      diagnosisText:
-        "Broad-targeting campaign is no longer converting on the original creative.",
-      actionLabel: "Recommended action",
-      actionText:
-        "Pause the under-performing ad set and reallocate budget to top retargeting cluster.",
-      caption: "This is what a recommendation looks like inside the product.",
+  engine: {
+    label: "THE ENGINE",
+    h2: "It finds the winner before you do.",
+    sd:
+      "Deterministic rules decide; the model only puts it into words. Every call names the ad, the number and the next move — and says so plainly when the tracking is thin.",
+    card: {
+      header: "SERUM BEFORE-AFTER 15s · LOOKALIKE 1%",
+      tag: "SCALE THIS",
+      cells: [
+        {
+          k: "SIGNAL",
+          v:
+            "Real ROAS ×5.00 against a ×3.0 target. $30,000 confirmed revenue on $6,000 spend.",
+          act: false,
+        },
+        {
+          k: "DIAGNOSIS",
+          v:
+            "Best performer in the account by confirmed revenue — and it runs on 12% of the budget. The ceiling has not been tested.",
+          act: false,
+        },
+        {
+          k: "ACTION",
+          v:
+            "1 — Lift this ad and its ad set into a separate campaign.\n2 — Build two new creatives from it and test for three days.",
+          act: true,
+        },
+        {
+          k: "EXPECTED RESULT",
+          v:
+            "Budget moves to the ad that already sells — with the ceiling found, not guessed.",
+          act: false,
+        },
+      ],
     },
   },
 
-  workspace: {
-    label: "The product",
-    h2: "Everything a buyer checks, in one place.",
-    modules: [
+  whoItsFor: {
+    label: "WHO IT'S FOR",
+    h2: "Built for whoever answers for the spend.",
+    cards: [
       {
-        name: "Meta Ads",
-        body: "Campaigns, ad sets and ads — each with a real-ROAS verdict, not just metrics.",
+        badge: "MEDIA BUYERS",
+        title: "Stop defending numbers you don't trust",
+        body:
+          "Walk into the call with confirmed ROAS per campaign, ad set and ad — and a ranked list of what to do next.",
       },
       {
-        name: "Sales & Attribution",
-        body: "Confirmed orders matched to the ad that actually produced them.",
+        badge: "E-COMMERCE OWNERS",
+        title: "Know what the ads actually returned",
+        body:
+          "Orders matched to the ad that produced them. Your monthly target measured against money that landed.",
       },
       {
-        name: "Dashboard",
-        body: "Spend against confirmed revenue. Your target versus what's really happening.",
+        badge: "AGENCIES",
+        title: "Report on results, not estimates",
+        body:
+          "Every client account scored the same way. No more explaining why the platform's number and the client's bank don't agree.",
       },
     ],
-    more: "UTM generator · Data sources · Monthly goals · Automated sync",
   },
 
-  access: {
-    label: "Early access",
-    h2: "See it on real numbers before you connect anything.",
-    body: "Create an account and you're in the live demo immediately — a full workspace with real campaigns, real leaks and real recommendations. Click through it yourself.",
-    bullets: [
-      "Full demo workspace, no ad account needed",
-      "Every recommendation the engine would give you",
-      "Free while in early access",
+  dataSources: {
+    label: "DATA SOURCES",
+    h2: "Connect in minutes. No tracking script to install.",
+    sd:
+      "AdControl reads your ad spend and your orders through official APIs, then matches them with the UTM tags you already use.",
+    sources: [
+      { name: "Meta Ads", desc: "Campaigns, ad sets, ads, spend" },
+      { name: "Shopify", desc: "Confirmed orders and revenue" },
+      { name: "Google Sheets", desc: "Any order source you already track" },
     ],
-    cta: "Create account",
   },
 
   security: {
-    label: "Security",
-    h2: "Built so your data stays yours.",
-    points: [
+    label: "SECURITY",
+    h2: "Your numbers stay yours.",
+    items: [
       {
-        t: "Row-level access",
-        b: "Each project is isolated at the database layer — users only see what they own.",
+        title: "Isolated at the database",
+        body:
+          "Row-level security. Each project is walled off — you only ever see what you own.",
       },
       {
-        t: "OAuth connections",
-        b: "Data sources connect via official APIs. No credentials are stored in plain text.",
+        title: "Official APIs only",
+        body:
+          "Sources connect through OAuth. No credentials are stored in plain text, ever.",
       },
       {
-        t: "Privacy-first",
-        b: "We do not sell, share or resell your advertising data. Ever.",
+        title: "Never resold",
+        body:
+          "We don't sell, share or aggregate your advertising data. It isn't part of the business model.",
       },
     ],
   },
 
-  cta: {
-    label: "Get started",
-    h2: "Stop scaling on numbers Meta made up.",
-    primary: "Get access",
-    secondary: "See live demo",
+  faq: {
+    label: "QUESTIONS",
+    h2: "The ones people actually ask.",
+    items: [
+      {
+        q: "Why don't the platform's numbers match my orders?",
+        a:
+          "Ad platforms attribute generously — a view, a scroll-past, a click that never converted can all end up counted. That's not fraud, it's how their attribution window works. AdControl doesn't argue with it; it simply re-scores everything against orders that landed, so you have both numbers and can steer on the second one.",
+      },
+      {
+        q: "Do I need to install a tracking script?",
+        a:
+          "No. AdControl reads spend from Meta through the official API and reads orders from Shopify or Google Sheets. The link between them is the UTM tags you're already putting on your ads.",
+      },
+      {
+        q: "Is this an AI that guesses what to do?",
+        a:
+          "No. Every recommendation is produced by fixed rules with explicit thresholds — spend share, real ROAS, attribution coverage. The language model only turns that decision into a sentence. It never invents a number or a verdict, and when the tracking is thin it says so instead of pretending.",
+      },
+      {
+        q: "What if my tracking is broken right now?",
+        a:
+          "Then AdControl tells you that first, before anything else. A recommendation built on 2% attribution coverage is worthless, so the engine flags the gap and hands you the two checks that fix it — rather than quietly producing confident nonsense.",
+      },
+      {
+        q: "What does it cost?",
+        a:
+          "Free while in early access. Paid plans arrive after launch, and anyone on the early access list keeps their access through the transition.",
+      },
+    ],
+  },
+
+  access: {
+    label: "EARLY ACCESS",
+    h2: "See your real numbers before you connect a thing.",
+    bullets: [
+      "A live workspace with real campaigns and real ROAS",
+      "Every recommendation the engine would hand you",
+      "No ad account required to look around",
+    ],
+    form: {
+      title: "Join the early access list",
+      sub: "Accounts open in batches. You get the demo link the moment you're in.",
+      placeholder: "you@company.com",
+      cta: "Get access",
+      fine: "Free while in early access.",
+    },
   },
 
   footer: {
-    tagline: "Ad decisions based on confirmed sales.",
-    columns: {
-      product: {
-        title: "Product",
-        links: [
-          { text: "Product", href: "#product" },
-          { text: "Early access", href: "#access" },
-          { text: "Security", href: "#security" },
-        ],
-      },
-      company: {
-        title: "Company",
-        links: [
-          { text: "Privacy", href: "#" },
-          { text: "Support", href: "#" },
-        ],
-      },
-      account: {
-        title: "Account",
-        links: [
-          { text: "Login", href: "/auth" },
-          { text: "Create account", href: "/auth" },
-        ],
-      },
-    },
-    copyright: "© 2026 AdControl. All rights reserved.",
-    infrastructure: "Marketing Operations Infrastructure",
+    copyright: "© 2026 AdControl — ad decisions based on confirmed sales.",
+    links: [
+      { text: "Privacy", href: "#" },
+      { text: "Terms", href: "#" },
+      { text: "Support", href: "#" },
+    ],
   },
 };
 

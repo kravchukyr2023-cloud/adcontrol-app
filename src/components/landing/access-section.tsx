@@ -4,43 +4,39 @@ import { en } from "@/messages/en";
 export default function AccessSection() {
   const t = en.access;
   return (
-    <section
-      id="access"
-      className="scroll-mt-20 bg-[#090A0F] text-white py-32 lg:py-40"
-    >
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-
-        <div className="max-w-2xl">
-          <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
-            {t.label}
-          </p>
-          <h2 className="text-4xl lg:text-5xl font-bold leading-[1.1] tracking-tight mb-6">
-            {t.h2}
-          </h2>
-          <p className="text-zinc-400 text-lg leading-relaxed mb-10">
-            {t.body}
-          </p>
-
-          <ul className="space-y-4 mb-10">
+    <div className="acc" id="access">
+      <div className="wrap ai">
+        <div>
+          <div className="sl rv">{t.label}</div>
+          <h2 className="landing-h2 rv">{t.h2}</h2>
+          <ul className="ck rv">
             {t.bullets.map((b) => (
-              <li key={b} className="flex items-center gap-3">
-                <span className="w-5 h-5 rounded-full bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-center text-indigo-300 text-[11px]">
-                  ✓
-                </span>
-                <span className="text-zinc-200">{b}</span>
+              <li key={b}>
+                <svg width="15" height="15" viewBox="0 0 16 16">
+                  <path
+                    d="M3 8.5L6 11.5L13 4.5"
+                    stroke="#0C6B41"
+                    strokeWidth="2"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {b}
               </li>
             ))}
           </ul>
-
-          <Link
-            href="/auth"
-            className="inline-flex items-center bg-white text-black px-5 py-3 rounded-xl font-medium hover:bg-zinc-200 transition"
-          >
-            {t.cta}
-          </Link>
         </div>
-
+        <div className="form rv">
+          <div className="t">{t.form.title}</div>
+          <div className="s">{t.form.sub}</div>
+          <input type="email" placeholder={t.form.placeholder} />
+          <Link href="/auth" className="btn btn-p btn-lg">
+            {t.form.cta}
+          </Link>
+          <div className="f">{t.form.fine}</div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

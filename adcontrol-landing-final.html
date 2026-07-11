@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdControl — Optimise on the sales you actually made</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F4EF;
+  --card:#FFFFFF;
+  --ink:#14171C;
+  --ink-2:#5D646E;
+  --ink-3:#9AA0A8;
+  --rule:#E3E2DB;
+  --rule-2:#CFCEC5;
+  --true:#0C6B41;
+  --true-lit:#12A05B;
+  --true-wash:#E9F2EC;
+  --claim:#B4B7B0;
+  --claim-wash:#EDECE7;
+  --w:1200px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:'Instrument Sans',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:var(--w);margin:0 auto;padding-left:40px;padding-right:40px}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:60;background:rgba(245,244,239,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.nv{display:flex;align-items:center;justify-content:space-between;height:72px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand b{font-size:17px;font-weight:600;letter-spacing:-.3px}
+.nl{display:flex;gap:32px}
+.nl a{color:var(--ink-2);text-decoration:none;font-size:14px;font-weight:500}
+.nl a:hover{color:var(--ink)}
+.nr{display:flex;align-items:center;gap:20px}
+.nr>a{color:var(--ink-2);text-decoration:none;font-size:14px;font-weight:500}
+.btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;font-family:inherit;font-weight:600;border:none;transition:.16s}
+.btn-p{background:var(--ink);color:var(--paper);padding:11px 19px;border-radius:6px;font-size:14px}
+.btn-p:hover{background:#000}
+.btn-lg{padding:15px 28px;font-size:15px;border-radius:7px}
+.btn-g{background:transparent;color:var(--ink);border:1px solid var(--rule-2);padding:14px 27px;border-radius:7px;font-size:15px}
+.btn-g:hover{border-color:var(--ink-3);background:#fff}
+
+/* HERO */
+.hero{padding-top:72px;padding-bottom:56px}
+.htop{display:grid;grid-template-columns:1.08fr .92fr;gap:60px;align-items:end;margin-bottom:44px}
+.eb{display:inline-flex;align-items:center;gap:9px;font-size:11px;font-weight:600;letter-spacing:2.4px;color:var(--ink-3);margin-bottom:24px}
+.eb i{width:18px;height:2px;background:var(--true);display:block;border-radius:2px}
+h1{font-size:clamp(40px,4.3vw,58px);font-weight:600;line-height:1.07;letter-spacing:-2.2px}
+h1 em{font-style:normal;color:var(--true)}
+.lede{font-size:17px;line-height:1.65;color:var(--ink-2);max-width:430px}
+.cta{display:flex;gap:11px;margin-top:28px}
+.fine{margin-top:18px;font-size:13px;color:var(--ink-3)}
+
+/* ===== SIGNATURE TABLE ===== */
+.tbl{background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.th{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.5fr;border-bottom:1px solid var(--rule)}
+.th>div{padding:18px 22px;border-right:1px solid var(--rule)}
+.th>div:last-child{border-right:0}
+.th .lbl{font-size:10px;letter-spacing:1.6px;font-weight:600;color:var(--ink-3);margin-bottom:5px}
+.th .nm{font-size:14px;font-weight:600}
+.th .c2{background:var(--claim-wash)}
+.th .c2 .nm{color:var(--ink-2)}
+.th .c3{background:var(--true-wash)}
+.th .c3 .lbl{color:var(--true-lit)}
+.th .c3 .nm{color:var(--true)}
+.th .c4 .lbl{color:var(--ink-3)}
+
+.tr{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.5fr;border-bottom:1px solid var(--rule)}
+.tr:last-child{border-bottom:0}
+.tr>div{padding:20px 22px;border-right:1px solid var(--rule);display:flex;align-items:center}
+.tr>div:last-child{border-right:0}
+.tr .met{font-size:14px;color:var(--ink-2);font-weight:500}
+.tr .c2{background:var(--claim-wash);color:var(--claim);font-size:19px;font-weight:600;letter-spacing:-.4px}
+.tr .c3{background:var(--true-wash);color:var(--true);font-size:19px;font-weight:600;letter-spacing:-.4px}
+.tr .c4{font-size:14px;color:var(--ink);line-height:1.55}
+.tr.win .c3{font-size:16px}
+.tr.win .c2{font-size:15px;font-weight:500}
+.tbl-foot{padding:18px 22px;border-top:1px solid var(--rule);background:var(--paper);font-size:13px;color:var(--ink-2)}
+.tbl-foot b{color:var(--true);font-weight:600}
+
+/* NUMBERS */
+.nums{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);background:var(--card)}
+.nb{display:grid;grid-template-columns:repeat(4,1fr)}
+.nc{padding-top:32px;padding-bottom:32px;padding-right:30px;border-right:1px solid var(--rule)}
+.nc:not(:first-child){padding-left:30px}
+.nc:last-child{border-right:0}
+.nc .n{display:block;font-size:34px;font-weight:600;letter-spacing:-1px;margin-bottom:10px}
+.nc .d{font-size:13px;color:var(--ink-2);line-height:1.6}
+.n.cl{color:var(--claim)}
+.n.tr2{color:var(--true)}
+.n.ik{color:var(--ink)}
+
+/* SECTIONS */
+.sec{padding-top:52px;padding-bottom:52px}
+.sl{font-size:11px;font-weight:600;letter-spacing:2.4px;color:var(--ink-3);margin-bottom:18px}
+h2{font-size:clamp(29px,2.9vw,40px);font-weight:600;letter-spacing:-1.4px;line-height:1.14;max-width:700px}
+.sd{margin-top:16px;font-size:16px;color:var(--ink-2);max-width:540px;line-height:1.65}
+
+.steps{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.st{background:var(--card);padding:30px 26px}
+.st .i{font-size:10px;color:var(--true);letter-spacing:1.6px;font-weight:600;margin-bottom:16px}
+.st h3{font-size:17px;font-weight:600;margin-bottom:10px;letter-spacing:-.3px}
+.st p{font-size:14px;color:var(--ink-2);line-height:1.65}
+
+.card{margin-top:34px;border:1px solid var(--rule);border-radius:12px;background:var(--card);overflow:hidden}
+.ch{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--rule);gap:16px}
+.ch .l{font-size:11px;letter-spacing:1.6px;color:var(--ink-3);font-weight:600}
+.tag{font-size:10px;font-weight:600;letter-spacing:1.2px;padding:5px 10px;border-radius:4px;background:var(--true-wash);color:var(--true);border:1px solid var(--true-lit);white-space:nowrap}
+.cb{display:grid;grid-template-columns:1fr 1fr}
+.cc{padding:24px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.cc:nth-child(2n){border-right:0}
+.cc:nth-last-child(-n+2){border-bottom:0}
+.cc .k{font-size:10px;letter-spacing:1.6px;font-weight:600;margin-bottom:10px;color:var(--ink-3)}
+.cc.act .k{color:var(--true)}
+.cc .v{font-size:14px;line-height:1.7;color:var(--ink)}
+
+/* WHO */
+.who{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.wc{background:var(--card);padding:30px 26px}
+.wc h3{font-size:17px;font-weight:600;margin-bottom:10px;letter-spacing:-.3px}
+.wc p{font-size:14px;color:var(--ink-2);line-height:1.65}
+.wc .b{display:inline-block;font-size:10px;letter-spacing:1.4px;font-weight:600;color:var(--true);margin-bottom:14px}
+
+/* SOURCES */
+.srcs{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.src{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:20px 22px;display:flex;align-items:flex-start;gap:13px}
+.src>span:last-child{display:block}
+.src .dot{width:8px;height:8px;border-radius:50%;background:var(--true);flex-shrink:0;margin-top:6px}
+.src .n{font-size:15px;font-weight:600;display:block}
+.src .s{font-size:12px;color:var(--ink-3);margin-top:3px;display:block;line-height:1.45}
+
+/* SECURITY */
+.sec-grid{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.sg{background:var(--card);padding:28px 26px}
+.sg h3{font-size:15px;font-weight:600;margin-bottom:9px}
+.sg p{font-size:13px;color:var(--ink-2);line-height:1.65}
+
+/* FAQ */
+.faq{margin-top:34px;border-top:1px solid var(--rule)}
+.fq{border-bottom:1px solid var(--rule)}
+.fq summary{
+  list-style:none;cursor:pointer;padding:24px 0;
+  font-size:17px;font-weight:600;letter-spacing:-.2px;
+  display:flex;justify-content:space-between;align-items:center;gap:20px;
+}
+.fq summary::-webkit-details-marker{display:none}
+.fq summary::after{content:"+";font-size:22px;font-weight:400;color:var(--ink-3);flex-shrink:0}
+.fq[open] summary::after{content:"–"}
+.fq p{padding:0 0 24px;font-size:15px;color:var(--ink-2);line-height:1.7;max-width:760px}
+
+/* ACCESS */
+.acc{border-top:1px solid var(--rule);background:var(--card);padding-top:64px;padding-bottom:64px}
+.ai{display:grid;grid-template-columns:1.05fr .95fr;gap:68px;align-items:center}
+.ck{list-style:none;margin-top:26px}
+.ck li{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid var(--rule);font-size:15px;align-items:flex-start}
+.ck li:first-child{border-top:1px solid var(--rule)}
+.ck svg{flex-shrink:0;margin-top:3px}
+.form{border:1px solid var(--rule);border-radius:12px;padding:28px;background:var(--paper)}
+.form .t{font-size:16px;font-weight:600;margin-bottom:6px}
+.form .s{font-size:13px;color:var(--ink-3);margin-bottom:20px;line-height:1.55}
+.form input{width:100%;background:var(--card);border:1px solid var(--rule-2);border-radius:6px;padding:14px 15px;color:var(--ink);font-family:inherit;font-size:14px;margin-bottom:10px}
+.form input:focus{outline:none;border-color:var(--true)}
+.form input::placeholder{color:var(--ink-3)}
+.form .btn{width:100%}
+.form .f{margin-top:13px;font-size:12px;color:var(--ink-3);text-align:center}
+
+footer{border-top:1px solid var(--rule);padding-top:38px;padding-bottom:38px}
+.ft{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+.ft span{font-size:13px;color:var(--ink-3)}
+.ft nav{display:flex;gap:24px;position:static;background:none;border:0;backdrop-filter:none}
+.ft a{color:var(--ink-3);text-decoration:none;font-size:13px}
+.ft a:hover{color:var(--ink-2)}
+
+.rv{opacity:0;transform:translateY(18px);transition:opacity .75s cubic-bezier(.2,.8,.2,1),transform .75s cubic-bezier(.2,.8,.2,1)}
+.rv.in{opacity:1;transform:none}
+
+@media(max-width:1000px){
+  .htop,.ai{grid-template-columns:1fr;gap:40px}
+  .nb{grid-template-columns:1fr 1fr}
+  .nc{border-bottom:1px solid var(--rule);padding-left:0}
+  .nc:nth-child(2n){border-right:0}
+  .steps,.cb{grid-template-columns:1fr}
+  .cc{border-right:0}
+  .nl{display:none}
+  .who,.srcs,.sec-grid{grid-template-columns:1fr}
+  /* table becomes stacked cards */
+  .th{display:none}
+  .tr{grid-template-columns:1fr 1fr;border-bottom:8px solid var(--paper)}
+  .tr:last-of-type{border-bottom:0}
+  .tr .met{
+    grid-column:1 / -1;border-right:0;border-bottom:1px solid var(--rule);
+    padding:14px 20px;font-size:11px;font-weight:600;letter-spacing:1.6px;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+  .tr .c2,.tr .c3{
+    display:block;padding:16px 20px 18px;border-bottom:1px solid var(--rule);
+  }
+  .tr .c2{border-right:1px solid var(--rule)}
+  .tr .c3{border-right:0}
+  .tr .c2::before,.tr .c3::before{
+    display:block;font-size:9px;letter-spacing:1.4px;font-weight:600;
+    margin-bottom:6px;font-family:'Instrument Sans',sans-serif;
+  }
+  .tr .c2::before{content:"META ADS SAYS";color:var(--ink-3)}
+  .tr .c3::before{content:"ADCONTROL SAYS";color:var(--true-lit)}
+  .tr .c4{
+    grid-column:1 / -1;border-right:0;border-bottom:0;
+    padding:16px 20px;display:block;
+  }
+  .tr .c4::before{
+    content:"WHAT YOU OPTIMISE ON";display:block;
+    font-size:9px;letter-spacing:1.4px;font-weight:600;color:var(--ink-3);margin-bottom:6px;
+  }
+  .tbl-foot{text-align:center}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nv">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+        <g stroke="#14171C" stroke-width="2.6" stroke-linecap="round" fill="none">
+          <path d="M3 11.5V7a4 4 0 0 1 4-4h4.5"/>
+          <path d="M29 11.5V7a4 4 0 0 0-4-4h-4.5"/>
+          <path d="M3 20.5V25a4 4 0 0 0 4 4h4.5"/>
+          <path d="M29 20.5V25a4 4 0 0 1-4 4h-4.5"/>
+        </g>
+        <rect x="11.5" y="11.5" width="9" height="9" rx="2.4" fill="#0C6B41"/>
+      </svg>
+      <b>AdControl</b>
+    </div>
+    <div class="nl">
+      <a href="#how">How it works</a>
+      <a href="#engine">The engine</a>
+      <a href="#who">Who it's for</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="nr">
+      <a href="#">Log in</a>
+      <a href="#access" class="btn btn-p">Get access</a>
+    </div>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="htop">
+      <div>
+        <div class="eb rv"><i></i>OPTIMISE ON CONFIRMED SALES</div>
+        <h1 class="rv">Optimise on the sales<br>you <em>actually made</em>.</h1>
+      </div>
+      <div>
+        <p class="lede rv">AdControl matches every order back to the ad that produced it. You stop steering on the platform's estimate and start steering on numbers you can verify.</p>
+        <div class="cta rv">
+          <a href="#access" class="btn btn-p btn-lg">Get access</a>
+          <a href="#" class="btn btn-g">See live demo</a>
+        </div>
+        <div class="fine rv">Free while in early access. Works with Meta Ads, Shopify and Google Sheets.</div>
+      </div>
+    </div>
+
+    <div class="tbl rv">
+      <div class="th">
+        <div><div class="lbl">CAMPAIGN</div><div class="nm">Lookalike 1% — Skincare</div></div>
+        <div class="c2"><div class="lbl">META ADS SAYS</div><div class="nm">Estimated</div></div>
+        <div class="c3"><div class="lbl">ADCONTROL SAYS</div><div class="nm">Confirmed</div></div>
+        <div class="c4"><div class="lbl">WHAT YOU OPTIMISE ON</div><div class="nm">&nbsp;</div></div>
+      </div>
+
+      <div class="tr">
+        <div class="met">Purchases</div>
+        <div class="c2 mono">253</div>
+        <div class="c3 mono">186</div>
+        <div class="c4">Budget planned on the volume that actually converted.</div>
+      </div>
+
+      <div class="tr">
+        <div class="met">Revenue</div>
+        <div class="c2 mono">$121,000</div>
+        <div class="c3 mono">$98,400</div>
+        <div class="c4">Targets set on money that reached your account.</div>
+      </div>
+
+      <div class="tr">
+        <div class="met">ROAS</div>
+        <div class="c2 mono">×3.03</div>
+        <div class="c3 mono">×2.46</div>
+        <div class="c4">Scaling decisions made on the true ratio, not an estimate.</div>
+      </div>
+
+      <div class="tr win">
+        <div class="met">Best ad</div>
+        <div class="c2 mono">not surfaced</div>
+        <div class="c3 mono">Serum 15s · ×5.00</div>
+        <div class="c4">The one ad genuinely worth scaling — found for you.</div>
+      </div>
+
+      <div class="tbl-foot">
+        Same campaign, two sets of numbers. <b>You optimise on the right one.</b>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nums">
+  <div class="wrap nb">
+    <div class="nc rv"><span class="n tr2 mono">×5.00</span><span class="d">The ad genuinely worth scaling — surfaced for you, ranked by revenue impact.</span></div>
+    <div class="nc rv"><span class="n ik mono">$8,387</span><span class="d">Budget you get back from campaigns that look fine but sell nothing.</span></div>
+    <div class="nc rv"><span class="n tr2 mono">Real</span><span class="d">ROAS on every campaign, ad set and ad — matched to confirmed orders.</span></div>
+    <div class="nc rv"><span class="n ik mono">0</span><span class="d">Guesses. Hard rules make the call. The model only puts it into words.</span></div>
+  </div>
+</div>
+
+<div class="sec" id="how">
+  <div class="wrap">
+    <div class="sl rv">HOW IT WORKS</div>
+    <h2 class="rv">Three moves to numbers you can scale on.</h2>
+    <div class="steps">
+      <div class="st rv">
+        <div class="i mono">01 — CONNECT</div>
+        <h3>Connect ads and sales</h3>
+        <p>Meta Ads on one side, confirmed orders from Shopify or Sheets on the other. UTM tags tie every sale back to the ad that produced it.</p>
+      </div>
+      <div class="st rv">
+        <div class="i mono">02 — MATCH</div>
+        <h3>Get your true numbers</h3>
+        <p>Real ROAS on every campaign, ad set and ad — built from orders that landed, not from platform estimates.</p>
+      </div>
+      <div class="st rv">
+        <div class="i mono">03 — SCALE</div>
+        <h3>Act on them</h3>
+        <p>Scale this. Hold that. Fix this gap. Ranked by revenue impact, each with the numbers behind the call.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="engine">
+  <div class="wrap">
+    <div class="sl rv">THE ENGINE</div>
+    <h2 class="rv">It finds the winner before you do.</h2>
+    <p class="sd rv">Deterministic rules decide; the model only puts it into words. Every call names the ad, the number and the next move — and says so plainly when the tracking is thin.</p>
+
+    <div class="card rv">
+      <div class="ch">
+        <span class="l mono">SERUM BEFORE-AFTER 15s · LOOKALIKE 1%</span>
+        <span class="tag">SCALE THIS</span>
+      </div>
+      <div class="cb">
+        <div class="cc"><div class="k">SIGNAL</div><div class="v">Real ROAS ×5.00 against a ×3.0 target. $30,000 confirmed revenue on $6,000 spend.</div></div>
+        <div class="cc"><div class="k">DIAGNOSIS</div><div class="v">Best performer in the account by confirmed revenue — and it runs on 12% of the budget. The ceiling has not been tested.</div></div>
+        <div class="cc act"><div class="k">ACTION</div><div class="v">1 — Lift this ad and its ad set into a separate campaign.<br>2 — Build two new creatives from it and test for three days.</div></div>
+        <div class="cc"><div class="k">EXPECTED RESULT</div><div class="v">Budget moves to the ad that already sells — with the ceiling found, not guessed.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="who">
+  <div class="wrap">
+    <div class="sl rv">WHO IT'S FOR</div>
+    <h2 class="rv">Built for whoever answers for the spend.</h2>
+    <div class="who">
+      <div class="wc rv">
+        <span class="b mono">MEDIA BUYERS</span>
+        <h3>Stop defending numbers you don't trust</h3>
+        <p>Walk into the call with confirmed ROAS per campaign, ad set and ad — and a ranked list of what to do next.</p>
+      </div>
+      <div class="wc rv">
+        <span class="b mono">E-COMMERCE OWNERS</span>
+        <h3>Know what the ads actually returned</h3>
+        <p>Orders matched to the ad that produced them. Your monthly target measured against money that landed.</p>
+      </div>
+      <div class="wc rv">
+        <span class="b mono">AGENCIES</span>
+        <h3>Report on results, not estimates</h3>
+        <p>Every client account scored the same way. No more explaining why the platform's number and the client's bank don't agree.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="sources">
+  <div class="wrap">
+    <div class="sl rv">DATA SOURCES</div>
+    <h2 class="rv">Connect in minutes. No tracking script to install.</h2>
+    <p class="sd rv">AdControl reads your ad spend and your orders through official APIs, then matches them with the UTM tags you already use.</p>
+    <div class="srcs">
+      <div class="src rv"><span class="dot"></span><span><span class="n">Meta Ads</span><span class="s">Campaigns, ad sets, ads, spend</span></span></div>
+      <div class="src rv"><span class="dot"></span><span><span class="n">Shopify</span><span class="s">Confirmed orders and revenue</span></span></div>
+      <div class="src rv"><span class="dot"></span><span><span class="n">Google Sheets</span><span class="s">Any order source you already track</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="security">
+  <div class="wrap">
+    <div class="sl rv">SECURITY</div>
+    <h2 class="rv">Your numbers stay yours.</h2>
+    <div class="sec-grid">
+      <div class="sg rv">
+        <h3>Isolated at the database</h3>
+        <p>Row-level security. Each project is walled off — you only ever see what you own.</p>
+      </div>
+      <div class="sg rv">
+        <h3>Official APIs only</h3>
+        <p>Sources connect through OAuth. No credentials are stored in plain text, ever.</p>
+      </div>
+      <div class="sg rv">
+        <h3>Never resold</h3>
+        <p>We don't sell, share or aggregate your advertising data. It isn't part of the business model.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="faq">
+  <div class="wrap">
+    <div class="sl rv">QUESTIONS</div>
+    <h2 class="rv">The ones people actually ask.</h2>
+    <div class="faq">
+      <details class="fq rv">
+        <summary>Why don't the platform's numbers match my orders?</summary>
+        <p>Ad platforms attribute generously — a view, a scroll-past, a click that never converted can all end up counted. That's not fraud, it's how their attribution window works. AdControl doesn't argue with it; it simply re-scores everything against orders that landed, so you have both numbers and can steer on the second one.</p>
+      </details>
+      <details class="fq rv">
+        <summary>Do I need to install a tracking script?</summary>
+        <p>No. AdControl reads spend from Meta through the official API and reads orders from Shopify or Google Sheets. The link between them is the UTM tags you're already putting on your ads.</p>
+      </details>
+      <details class="fq rv">
+        <summary>Is this an AI that guesses what to do?</summary>
+        <p>No. Every recommendation is produced by fixed rules with explicit thresholds — spend share, real ROAS, attribution coverage. The language model only turns that decision into a sentence. It never invents a number or a verdict, and when the tracking is thin it says so instead of pretending.</p>
+      </details>
+      <details class="fq rv">
+        <summary>What if my tracking is broken right now?</summary>
+        <p>Then AdControl tells you that first, before anything else. A recommendation built on 2% attribution coverage is worthless, so the engine flags the gap and hands you the two checks that fix it — rather than quietly producing confident nonsense.</p>
+      </details>
+      <details class="fq rv">
+        <summary>What does it cost?</summary>
+        <p>Free while in early access. Paid plans arrive after launch, and anyone on the early access list keeps their access through the transition.</p>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div class="acc" id="access">
+  <div class="wrap ai">
+    <div>
+      <div class="sl rv">EARLY ACCESS</div>
+      <h2 class="rv">See your real numbers before you connect a thing.</h2>
+      <ul class="ck rv">
+        <li><svg width="15" height="15" viewBox="0 0 16 16"><path d="M3 8.5L6 11.5L13 4.5" stroke="#0C6B41" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>A live workspace with real campaigns and real ROAS</li>
+        <li><svg width="15" height="15" viewBox="0 0 16 16"><path d="M3 8.5L6 11.5L13 4.5" stroke="#0C6B41" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Every recommendation the engine would hand you</li>
+        <li><svg width="15" height="15" viewBox="0 0 16 16"><path d="M3 8.5L6 11.5L13 4.5" stroke="#0C6B41" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>No ad account required to look around</li>
+      </ul>
+    </div>
+    <div class="form rv">
+      <div class="t">Join the early access list</div>
+      <div class="s">Accounts open in batches. You get the demo link the moment you're in.</div>
+      <input type="email" placeholder="you@company.com">
+      <button class="btn btn-p btn-lg">Get access</button>
+      <div class="f">Free while in early access.</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap ft">
+    <span>© 2026 AdControl — ad decisions based on confirmed sales.</span>
+    <nav>
+      <a href="#">Privacy</a><a href="#">Terms</a><a href="#">Support</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+const io = new IntersectionObserver(function(es){
+  es.forEach(function(e){
+    if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
+  });
+},{threshold:0.12});
+document.querySelectorAll('.rv').forEach(function(el,i){
+  el.style.transitionDelay = (i % 3) * 70 + 'ms';
+  io.observe(el);
+});
+</script>
+</body>
+</html>

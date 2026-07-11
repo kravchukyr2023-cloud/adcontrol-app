@@ -5,7 +5,7 @@ export default function HowItWorksSection() {
   return (
     <section
       id="how"
-      className="scroll-mt-20 bg-[#090A0F] text-white py-24 lg:py-32 border-b border-zinc-900"
+      className="scroll-mt-20 bg-[#090A0F] text-white py-20 lg:py-24"
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
 

@@ -11,7 +11,7 @@ export const en = {
   header: {
     logo: "AdControl",
     nav: {
-      product: "Product",
+      product: "The product",
       howItWorks: "How it works",
       access: "Early access",
       security: "Security",
@@ -93,8 +93,8 @@ export const en = {
 
   decisionEngine: {
     label: "The engine",
-    h2: "It doesn't show you data. It tells you what to do.",
-    body: "Every recommendation names the campaign, the number, and the next action. If the tracking is thin, it says so instead of pretending.",
+    h2: "Deterministic rules. Not a chatbot guessing.",
+    body: "The engine decides what to recommend — hard-coded rules over confirmed sales. AI only puts it in plain language. It never invents a number or a verdict.",
     signals: [
       "Where budget is burning",
       "What is safe to scale",
@@ -175,7 +175,7 @@ export const en = {
   },
 
   footer: {
-    tagline: "Operational marketing workspace for paid advertising.",
+    tagline: "Ad decisions based on confirmed sales.",
     columns: {
       product: {
         title: "Product",

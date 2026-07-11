@@ -6,7 +6,7 @@ const bars = [40, 62, 48, 78, 55, 72, 88];
 export default function LandingHero() {
   const t = en.hero;
   return (
-    <section className="bg-[#090A0F] text-white border-b border-zinc-900">
+    <section className="bg-[#090A0F] text-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-20 lg:py-28">
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">

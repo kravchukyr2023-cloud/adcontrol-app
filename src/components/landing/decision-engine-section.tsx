@@ -3,7 +3,7 @@ import { en } from "@/messages/en";
 export default function DecisionEngineSection() {
   const t = en.decisionEngine;
   return (
-    <section className="bg-[#090A0F] text-white py-24 lg:py-32 border-b border-zinc-900">
+    <section className="bg-[#090A0F] text-white py-20 lg:py-24">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">

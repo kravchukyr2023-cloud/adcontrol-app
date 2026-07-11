@@ -6,7 +6,7 @@ export default function AccessSection() {
   return (
     <section
       id="access"
-      className="scroll-mt-20 bg-[#090A0F] text-white py-32 lg:py-40 border-b border-zinc-900"
+      className="scroll-mt-20 bg-[#090A0F] text-white py-32 lg:py-40"
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
 

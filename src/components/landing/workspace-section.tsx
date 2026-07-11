@@ -22,32 +22,18 @@ export default function WorkspaceSection() {
           {t.modules.map((m) => (
             <div
               key={m.name}
-              className="border border-zinc-800 rounded-2xl bg-zinc-950 p-6 flex flex-col"
+              className="border border-zinc-800 rounded-2xl bg-zinc-950 p-8 flex flex-col"
             >
-              <div className="flex items-center gap-3 mb-4">
-                <span className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 flex items-center justify-center">
-                  {m.icon}
-                </span>
-                <h3 className="text-base font-semibold">{m.name}</h3>
-              </div>
-
-              <p className="text-sm text-zinc-400 leading-relaxed mb-5 flex-1">
+              <h3 className="text-xl font-semibold mb-4">{m.name}</h3>
+              <p className="text-base text-zinc-400 leading-relaxed">
                 {m.body}
               </p>
-
-              <div className="flex flex-wrap gap-1.5">
-                {m.chips.map((c) => (
-                  <span
-                    key={c}
-                    className="text-[11px] text-zinc-400 border border-zinc-800 bg-black/30 px-2 py-0.5 rounded-md"
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
             </div>
           ))}
         </div>
+
+        <p className="mt-8 text-sm text-zinc-500">{t.more}</p>
+
       </div>
     </section>
   );

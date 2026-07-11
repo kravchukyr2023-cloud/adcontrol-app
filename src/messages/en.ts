@@ -1,5 +1,5 @@
 /**
- * Sprint 7 stage 7.2 — landing copy source of truth.
+ * Sprint 7 stage 7.3 — landing copy source of truth.
  *
  * Every string rendered on the public landing lives here. Components read
  * from this object; no hardcoded copy in JSX. Prepares the ground for a
@@ -21,9 +21,9 @@ export const en = {
   },
 
   hero: {
-    badge: "Real sales. Not Meta's numbers.",
+    badge: "Confirmed sales. Not Meta's reporting.",
     h1: "Meta reports 315 purchases. You had 2.",
-    sub: "AdControl scores your ads against confirmed orders — not platform reporting. It shows where budget burns, what to scale, and what to do next. As concrete tasks, not charts.",
+    sub: "AdControl scores every campaign against confirmed orders — not platform numbers. It tells you where budget burns, what to scale, and what to do today. As tasks, not charts.",
     primaryCta: "Get access",
     secondaryCta: "See live demo",
     loginLink: "Login →",
@@ -43,73 +43,63 @@ export const en = {
   },
 
   problem: {
-    label: "The problem",
-    h2: "Most ad accounts do not have a traffic problem. They have an operations problem.",
+    label: "Why your ROAS is fiction",
+    h2: "Meta grades its own homework. And it grades generously.",
     cards: [
       {
-        title: "Platform ROAS is not enough",
-        body: "Meta reports a number that looks profitable while real revenue tells a different story.",
+        title: "It counts purchases you didn't get",
+        body: "A view-through, a scroll-past, a click that never converted — Meta books it as a sale. Your bank account disagrees.",
         color: "bg-indigo-500",
       },
       {
-        title: "Data lives in silos",
-        body: "Ads, sales, attribution and goals never sit in the same place at the same time.",
+        title: "It takes credit for buyers you already had",
+        body: "Retargeting shows a 6x ROAS by claiming returning customers who were coming back anyway.",
         color: "bg-cyan-500",
       },
       {
-        title: "Numbers stop at metrics",
-        body: "Dashboards show CTR, CPC, ROAS — but never explain what to do next.",
+        title: "Broken tracking hides the truth",
+        body: "When tags don't fire or the purchase event points at the wrong action, real numbers vanish — and nobody tells you.",
         color: "bg-amber-500",
       },
       {
-        title: "Budget leaks before anyone sees it",
-        body: "Spend keeps going while a campaign is already broken — and nothing surfaces it.",
+        title: "You scale on the fake number",
+        body: "The campaign Meta calls a winner is the one quietly eating your margin. You find out at month-end.",
         color: "bg-rose-500",
-      },
-    ],
-  },
-
-  operationalControl: {
-    label: "Why AdControl",
-    h2: "Operational control, not just dashboards.",
-    items: [
-      {
-        title: "Centralized marketing operations",
-        body: "Every campaign, account and signal in one operating layer. Stop juggling tabs, screenshots and exports.",
-      },
-      {
-        title: "Unified data, one workspace",
-        body: "Ad spend, real revenue, attribution and business targets live together — not in five disconnected tools.",
-      },
-      {
-        title: "Structured decision flow",
-        body: "From signal to diagnosis to action. Every decision has a trace, not a guess from memory.",
       },
     ],
   },
 
   howItWorks: {
     label: "How it works",
-    h2: "From disconnected data to operational decisions.",
+    h2: "Three steps to numbers you can trust.",
     steps: [
-      { n: "01", t: "Connect data", b: "Plug in Meta Ads, sales sources and attribution. Everything in one operational view." },
-      { n: "02", t: "Detect losses", b: "Find leaks the moment they happen — not at end-of-month review." },
-      { n: "03", t: "Diagnose problems", b: "Move from a metric to a cause: which campaign, which ad set, which creative." },
-      { n: "04", t: "Prioritize actions", b: "Most-impact moves first. No more random changes that cancel each other out." },
-      { n: "05", t: "Execute decisions", b: "Apply the change in the source platform with a clear audit trail." },
-      { n: "06", t: "Validate results", b: "Confirm the decision actually moved revenue, not just a dashboard number." },
+      {
+        n: "01",
+        t: "Connect ads and sales",
+        b: "Meta Ads on one side, confirmed orders from Shopify or Sheets on the other. UTM tags tie them together.",
+      },
+      {
+        n: "02",
+        t: "The engine scores every campaign",
+        b: "Deterministic rules — not a chatbot guessing. Real ROAS, real orders, attribution health, per campaign, ad set and ad.",
+      },
+      {
+        n: "03",
+        t: "You get tasks, not charts",
+        b: "Pause this. Scale that. Fix this tracking gap. Ranked by revenue impact, with the numbers behind each call.",
+      },
     ],
   },
 
   decisionEngine: {
-    label: "Decision engine",
-    h2: "Ad Decision Engine. Diagnosis, not dashboards.",
-    body: "AdControl surfaces what matters and tells you what to do next — instead of leaving you to interpret another chart.",
+    label: "The engine",
+    h2: "It doesn't show you data. It tells you what to do.",
+    body: "Every recommendation names the campaign, the number, and the next action. If the tracking is thin, it says so instead of pretending.",
     signals: [
-      "Revenue leaks",
-      "Scaling opportunities",
-      "Attribution gaps",
-      "Priority actions",
+      "Where budget is burning",
+      "What is safe to scale",
+      "Where Meta overstates",
+      "What to fix first",
     ],
     mock: {
       alert: "Revenue leak detected",
@@ -117,60 +107,44 @@ export const en = {
       signalLabel: "Signal",
       signalText: "Spend +18% this week, real ROAS dropped from 2.9 to 0.6.",
       diagnosisLabel: "Diagnosis",
-      diagnosisText: "Broad-targeting campaign is no longer converting on the original creative.",
+      diagnosisText:
+        "Broad-targeting campaign is no longer converting on the original creative.",
       actionLabel: "Recommended action",
-      actionText: "Pause the under-performing ad set and reallocate budget to top retargeting cluster.",
-      cta: "Open Diagnosis",
+      actionText:
+        "Pause the under-performing ad set and reallocate budget to top retargeting cluster.",
+      caption: "This is what a recommendation looks like inside the product.",
     },
   },
 
   workspace: {
     label: "The product",
-    h2: "One workspace. Spend, revenue, attribution, decisions.",
+    h2: "Everything a buyer checks, in one place.",
     modules: [
       {
-        icon: "⟡",
-        name: "Dashboard",
-        body: "Spend, revenue and decision signals in one operational view.",
-        chips: ["KPI", "Goals", "Alerts"],
-      },
-      {
-        icon: "◆",
         name: "Meta Ads",
-        body: "Campaigns, ad sets and creatives with diagnostic context.",
-        chips: ["BM", "Accounts", "Creatives"],
+        body: "Campaigns, ad sets and ads — each with a real-ROAS verdict, not just metrics.",
       },
       {
-        icon: "◯",
         name: "Sales & Attribution",
-        body: "Real orders matched against ad spend and campaigns.",
-        chips: ["Orders", "AOV", "Real ROAS"],
+        body: "Confirmed orders matched to the ad that actually produced them.",
       },
       {
-        icon: "⊕",
-        name: "UTM Generator",
-        body: "Structured tagging so attribution actually works.",
-        chips: ["Presets", "Validation"],
-      },
-      {
-        icon: "✎",
-        name: "Data Sources",
-        body: "Meta, Shopify, Google Sheets connected as operational sources.",
-        chips: ["Meta", "Shopify", "Sheets"],
-      },
-      {
-        icon: "⚙",
-        name: "Business Control Center",
-        body: "Currency, timezone, monthly goals and sync intervals.",
-        chips: ["Goals", "Sync", "Plan"],
+        name: "Dashboard",
+        body: "Spend against confirmed revenue. Your target versus what's really happening.",
       },
     ],
+    more: "UTM generator · Data sources · Monthly goals · Automated sync",
   },
 
   access: {
     label: "Early access",
-    h2: "AdControl is in early access.",
-    body: "Create an account to join the list and get into the live demo — a real workspace with real numbers you can click through.",
+    h2: "See it on real numbers before you connect anything.",
+    body: "Create an account and you're in the live demo immediately — a full workspace with real campaigns, real leaks and real recommendations. Click through it yourself.",
+    bullets: [
+      "Full demo workspace, no ad account needed",
+      "Every recommendation the engine would give you",
+      "Free while in early access",
+    ],
     cta: "Create account",
   },
 
@@ -195,7 +169,7 @@ export const en = {
 
   cta: {
     label: "Get started",
-    h2: "Create your operational marketing workspace.",
+    h2: "Stop scaling on numbers Meta made up.",
     primary: "Get access",
     secondary: "See live demo",
   },

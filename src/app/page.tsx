@@ -1,7 +1,6 @@
 import LandingHeader from "@/components/landing/header";
 import LandingHero from "@/components/landing/hero";
 import ProblemSection from "@/components/landing/problem-section";
-import OperationalControlSection from "@/components/landing/operational-control-section";
 import HowItWorksSection from "@/components/landing/how-it-works-section";
 import DecisionEngineSection from "@/components/landing/decision-engine-section";
 import WorkspaceSection from "@/components/landing/workspace-section";
@@ -17,7 +16,6 @@ export default function Home() {
       <main>
         <LandingHero />
         <ProblemSection />
-        <OperationalControlSection />
         <HowItWorksSection />
         <DecisionEngineSection />
         <WorkspaceSection />

@@ -73,15 +73,10 @@ export default function DecisionEngineSection() {
                 </div>
               </div>
 
-              {/* Visual footer only — no href/onClick. cursor-default and no
-                  hover state so it doesn't read as an actionable button. */}
-              <div
-                aria-hidden="true"
-                className="mt-6 w-full bg-zinc-900 text-zinc-500 py-2.5 rounded-xl font-medium text-sm text-center cursor-default select-none border border-zinc-800"
-              >
-                {t.mock.cta}
-              </div>
             </div>
+            <p className="mt-4 text-xs text-zinc-500 text-center">
+              {t.mock.caption}
+            </p>
           </div>
 
         </div>

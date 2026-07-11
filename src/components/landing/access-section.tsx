@@ -6,11 +6,11 @@ export default function AccessSection() {
   return (
     <section
       id="access"
-      className="scroll-mt-20 bg-[#090A0F] text-white py-24 lg:py-32 border-b border-zinc-900"
+      className="scroll-mt-20 bg-[#090A0F] text-white py-32 lg:py-40 border-b border-zinc-900"
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
 
-        <div className="max-w-3xl">
+        <div className="max-w-2xl">
           <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-5">
             {t.label}
           </p>
@@ -20,6 +20,17 @@ export default function AccessSection() {
           <p className="text-zinc-400 text-lg leading-relaxed mb-10">
             {t.body}
           </p>
+
+          <ul className="space-y-4 mb-10">
+            {t.bullets.map((b) => (
+              <li key={b} className="flex items-center gap-3">
+                <span className="w-5 h-5 rounded-full bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-center text-indigo-300 text-[11px]">
+                  ✓
+                </span>
+                <span className="text-zinc-200">{b}</span>
+              </li>
+            ))}
+          </ul>
 
           <Link
             href="/auth"
